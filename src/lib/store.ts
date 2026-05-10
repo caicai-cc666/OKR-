@@ -445,6 +445,7 @@ interface AppStore {
   memberships: TenantMembership[];
   currentUserId: string;
   currentTenantId: string;
+  currentPasswordResetRequired: boolean;
 
   // --- Account reads/actions ---
   getCurrentUser: () => UserAccount | undefined;
@@ -459,6 +460,7 @@ interface AppStore {
     tenants: Tenant[];
     memberships: TenantMembership[];
     currentTenantId: string;
+    passwordResetRequired?: boolean;
   }) => void;
   logoutLocal: () => void;
   switchTenant: (tenantId: string) => void;
@@ -892,6 +894,7 @@ export const useAppStore = create<AppStore>()(
       memberships: mockMemberships,
       currentUserId: DEFAULT_USER_ID,
       currentTenantId: DEFAULT_TENANT_ID,
+      currentPasswordResetRequired: false,
 
       // --- Account reads/actions ---
       getCurrentUser: () => get().users.find((user) => user.id === get().currentUserId),
@@ -947,6 +950,7 @@ export const useAppStore = create<AppStore>()(
             memberships: session.memberships,
             currentUserId: session.user.id,
             currentTenantId: targetTenantId,
+            currentPasswordResetRequired: session.passwordResetRequired ?? false,
             config: nextConfig,
             tenantConfigs: {
               ...s.tenantConfigs,
@@ -962,6 +966,7 @@ export const useAppStore = create<AppStore>()(
           memberships: [],
           currentUserId: "",
           currentTenantId: "",
+          currentPasswordResetRequired: false,
         });
       },
       switchTenant: (tenantId) => {

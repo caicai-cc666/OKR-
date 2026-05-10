@@ -83,7 +83,7 @@ export default function LoginPage() {
 
       applyServerSession(data.session);
       toast.success("登录成功");
-      router.push("/cases");
+      router.push(data.session.passwordResetRequired ? "/account/password" : "/cases");
     } catch {
       toast.error("无法连接登录服务");
     } finally {

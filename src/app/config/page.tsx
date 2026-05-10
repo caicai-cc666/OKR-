@@ -6,6 +6,7 @@ import { useAppStore } from "@/lib/store";
 import { PageHeader } from "@/components/shared";
 import { AccountRoleLabel, roleHasPermission } from "@/types";
 import {
+  AccountsTab,
   RolesTab,
   RoleTagLibraryTab,
   ModelsTab,
@@ -14,7 +15,7 @@ import {
   JsonTab,
 } from "@/components/config";
 import {
-  Bot, Cpu, ShieldCheck, Workflow, FileJson, Tags,
+  Bot, Cpu, ShieldCheck, Workflow, FileJson, Tags, UsersRound,
 } from "lucide-react";
 
 export default function ConfigPage() {
@@ -32,7 +33,7 @@ export default function ConfigPage() {
       <div className="space-y-6 max-w-5xl">
         <PageHeader
           title="系统配置"
-          description="当前账号只能使用 OKR 拆解，不能修改企业配置"
+          description="当前账号只能使用 OKR 拆解，不能修改企业配置。"
         />
         <Card className="border-slate-200 shadow-sm">
           <CardContent className="p-6 text-sm text-slate-600">
@@ -47,11 +48,15 @@ export default function ConfigPage() {
     <div className="space-y-6 max-w-5xl">
       <PageHeader
         title="系统配置"
-        description="配置角色定义、模型参数、KR质量评分维度和流程模板"
+        description="配置账号、角色定义、模型参数、KR 质量评分维度和流程模板。"
       />
 
-      <Tabs defaultValue="roles" className="space-y-4">
+      <Tabs defaultValue="accounts" className="space-y-4">
         <TabsList className="bg-slate-100 h-auto flex-wrap gap-0.5 p-1">
+          <TabsTrigger value="accounts" className="gap-1.5 text-xs">
+            <UsersRound className="w-3.5 h-3.5" />
+            账号管理
+          </TabsTrigger>
           <TabsTrigger value="roles" className="gap-1.5 text-xs">
             <Bot className="w-3.5 h-3.5" />
             角色配置
@@ -66,7 +71,7 @@ export default function ConfigPage() {
           </TabsTrigger>
           <TabsTrigger value="review" className="gap-1.5 text-xs">
             <ShieldCheck className="w-3.5 h-3.5" />
-            KR评分维度
+            KR 评分维度
           </TabsTrigger>
           <TabsTrigger value="flow" className="gap-1.5 text-xs">
             <Workflow className="w-3.5 h-3.5" />
@@ -77,6 +82,10 @@ export default function ConfigPage() {
             导入导出
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="accounts">
+          <AccountsTab />
+        </TabsContent>
 
         <TabsContent value="roles">
           <RolesTab roles={config.roles} />

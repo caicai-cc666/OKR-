@@ -14,6 +14,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const applyServerSession = useAppStore((s) => s.applyServerSession);
+  const passwordResetRequired = useAppStore((s) => s.currentPasswordResetRequired);
   const [authState, setAuthState] = useState<"checking" | "ready">("checking");
 
   useEffect(() => {
@@ -40,6 +41,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         const data = await response.json();
         if (data.session) {
           applyServerSession(data.session);
+          if (data.session.passwordResetRequired && pathname !== "/account/password") {
+            router.replace("/account/password");
+            return;
+          }
         }
         setAuthState("ready");
       })
@@ -60,6 +65,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (pathname.startsWith("/login")) {
     return <main className="min-h-screen bg-slate-50">{children}</main>;
+  }
+
+  if (passwordResetRequired && pathname !== "/account/password") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">
+        正在进入密码修改页...
+      </main>
+    );
   }
 
   if (authState === "checking") {
