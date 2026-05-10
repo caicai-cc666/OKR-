@@ -167,7 +167,9 @@ export async function runAgent(
   // All retries exhausted
   const safeMsg = lastError?.message?.replace(/sk-[a-zA-Z0-9_-]+/g, "sk-***") ?? "未知错误";
 
-  if (strictLive) {
+  const isConfigurationError = safeMsg.includes("API Key") || safeMsg.includes("NO_API_KEY");
+
+  if (strictLive || isConfigurationError) {
     throw new Error(`[${role.roleName}] Live 调用失败: ${safeMsg}`);
   }
 

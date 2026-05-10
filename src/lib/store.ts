@@ -33,9 +33,41 @@ function cloneConfig(config: AppConfig): AppConfig {
   return JSON.parse(JSON.stringify(config)) as AppConfig;
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeAppConfig(config?: Partial<AppConfig>): AppConfig {
+  const base = cloneConfig(mockConfig);
+  const source = isPlainRecord(config) ? config : {};
+  const runMode = source.runMode === "mock" || source.runMode === "live" ? source.runMode : "live";
+  const normalized: AppConfig = {
+    ...base,
+    ...source,
+    runMode,
+    strictLive: typeof source.strictLive === "boolean" ? source.strictLive : false,
+    roles: Array.isArray(source.roles) && source.roles.length ? source.roles : base.roles,
+    tagLibraries: source.tagLibraries ?? base.tagLibraries,
+    review: {
+      ...base.review,
+      ...(isPlainRecord(source.review) ? source.review : {}),
+    } as AppConfig["review"],
+    flowTemplates: Array.isArray(source.flowTemplates) && source.flowTemplates.length
+      ? source.flowTemplates
+      : base.flowTemplates,
+  };
+
+  normalized.roles = normalized.roles
+    .filter((role) => Boolean(role?.roleId))
+    .map((role) => ensureRoleModel(role, normalized));
+  if (!normalized.roles.length) normalized.roles = base.roles;
+
+  return normalized;
+}
+
 function createTenantDefaultConfig(config: AppConfig = mockConfig): AppConfig {
   return {
-    ...cloneConfig(config),
+    ...normalizeAppConfig(config),
     runMode: "live",
     strictLive: false,
   };
@@ -58,7 +90,7 @@ function createDefaultTenantConfigs(config: AppConfig = mockConfig): Record<stri
 }
 
 function migrateLegacyMockConfigToLive(config: AppConfig): AppConfig {
-  const nextConfig = cloneConfig(config);
+  const nextConfig = normalizeAppConfig(config);
   if (nextConfig.runMode === "mock") {
     nextConfig.runMode = "live";
     nextConfig.strictLive = false;
@@ -533,11 +565,12 @@ interface AppStore {
 }
 
 function withCurrentTenantConfig(s: AppStore, config: AppConfig): Partial<AppStore> {
+  const normalizedConfig = normalizeAppConfig(config);
   return {
-    config,
+    config: normalizedConfig,
     tenantConfigs: {
       ...s.tenantConfigs,
-      [s.currentTenantId || DEFAULT_TENANT_ID]: config,
+      [s.currentTenantId || DEFAULT_TENANT_ID]: normalizedConfig,
     },
   };
 }
@@ -958,7 +991,7 @@ export const useAppStore = create<AppStore>()(
           const targetTenantId: string = platformMembership
             ? (requestedTenantId ?? s.currentTenantId ?? DEFAULT_TENANT_ID)
             : tenantMembership?.tenantId ?? s.currentTenantId ?? DEFAULT_TENANT_ID;
-          const nextConfig = s.tenantConfigs[targetTenantId] ?? createTenantDefaultConfig();
+          const nextConfig = normalizeAppConfig(s.tenantConfigs[targetTenantId] ?? createTenantDefaultConfig());
 
           return {
             currentUserId: userId,
@@ -976,7 +1009,7 @@ export const useAppStore = create<AppStore>()(
           const targetTenantId = session.tenants.some((tenant) => tenant.id === session.currentTenantId)
             ? session.currentTenantId
             : session.tenants[0]?.id ?? session.currentTenantId;
-          const nextConfig = s.tenantConfigs[targetTenantId] ?? createTenantDefaultConfig();
+          const nextConfig = normalizeAppConfig(s.tenantConfigs[targetTenantId] ?? createTenantDefaultConfig());
 
           return {
             users: [session.user],
@@ -1014,7 +1047,7 @@ export const useAppStore = create<AppStore>()(
                 item.status === "active"
             );
           if (!canSwitch || !s.tenants.some((tenant) => tenant.id === tenantId)) return {};
-          const nextConfig = s.tenantConfigs[tenantId] ?? createTenantDefaultConfig();
+          const nextConfig = normalizeAppConfig(s.tenantConfigs[tenantId] ?? createTenantDefaultConfig());
           return {
             currentTenantId: tenantId,
             config: nextConfig,
@@ -1814,9 +1847,14 @@ export const useAppStore = create<AppStore>()(
           : DEFAULT_TENANT_ID;
         const tenantConfigs = {
           ...createDefaultTenantConfigs(persisted.config ?? currentState.config),
-          ...(persisted.tenantConfigs ?? {}),
+          ...Object.fromEntries(
+            Object.entries(persisted.tenantConfigs ?? {}).map(([tenantId, config]) => [
+              tenantId,
+              normalizeAppConfig(config),
+            ])
+          ),
         };
-        const config = tenantConfigs[currentTenantId] ?? persisted.config ?? currentState.config;
+        const config = normalizeAppConfig(tenantConfigs[currentTenantId] ?? persisted.config ?? currentState.config);
 
         return {
           ...currentState,
