@@ -11,6 +11,7 @@ import { runInformationStructuringAgent, runDecompositionAgent, runReviewerAgent
 // ---- Helpers ----
 
 const IGNORED_MISSING_PREFIX = "ignoredMissing:";
+const STORE_SCHEMA_VERSION = 2;
 
 const DEFAULT_LOOP_SETTINGS: FlowLoopSettings = {
   outerLoop: { enabled: true, maxIterations: 5 },
@@ -54,6 +55,31 @@ function ensureRoleModel(role: RoleConfig, config: AppConfig): RoleConfig {
 
 function createDefaultTenantConfigs(config: AppConfig = mockConfig): Record<string, AppConfig> {
   return Object.fromEntries(mockTenants.map((tenant) => [tenant.id, createTenantDefaultConfig(config)]));
+}
+
+function migrateLegacyMockConfigToLive(config: AppConfig): AppConfig {
+  const nextConfig = cloneConfig(config);
+  if (nextConfig.runMode === "mock") {
+    nextConfig.runMode = "live";
+    nextConfig.strictLive = false;
+  }
+  return nextConfig;
+}
+
+function migrateLegacyStoreState(state: Partial<AppStore> | undefined): Partial<AppStore> | undefined {
+  if (!state) return state;
+  return {
+    ...state,
+    config: state.config ? migrateLegacyMockConfigToLive(state.config) : state.config,
+    tenantConfigs: state.tenantConfigs
+      ? Object.fromEntries(
+          Object.entries(state.tenantConfigs).map(([tenantId, config]) => [
+            tenantId,
+            migrateLegacyMockConfigToLive(config),
+          ])
+        )
+      : state.tenantConfigs,
+  };
 }
 
 function normalizeCasesForTenant(cases: OkrCase[]): OkrCase[] {
@@ -1773,6 +1799,11 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: "okr-harness-store",
+      version: STORE_SCHEMA_VERSION,
+      migrate: (persistedState, version) => {
+        if (version >= STORE_SCHEMA_VERSION) return persistedState;
+        return migrateLegacyStoreState(persistedState as Partial<AppStore>);
+      },
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<AppStore> | undefined;
         if (!persisted) return currentState;
