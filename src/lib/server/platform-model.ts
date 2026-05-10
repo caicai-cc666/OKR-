@@ -2,6 +2,7 @@ import { decryptSecret, encryptSecret } from "@/lib/server/security";
 import { query } from "@/lib/server/db";
 
 export interface PlatformModelConfig {
+  roleId?: string;
   provider: string;
   modelId: string;
   apiBaseUrl?: string;
@@ -14,6 +15,7 @@ export interface PlatformModelConfig {
 }
 
 interface PlatformModelRow {
+  id: string;
   provider: string;
   model_id: string;
   api_base_url: string | null;
@@ -39,20 +41,9 @@ export async function ensurePlatformModelTable(): Promise<void> {
   `);
 }
 
-export async function getPlatformModelConfig(): Promise<PlatformModelConfig | null> {
-  await ensurePlatformModelTable();
-  const result = await query<PlatformModelRow>(
-    `
-      SELECT provider, model_id, api_base_url, connection_type, encrypted_api_key, settings
-      FROM platform_model_credentials
-      WHERE id = 'default'
-      LIMIT 1
-    `,
-  );
-  const row = result.rows[0];
-  if (!row) return null;
-
+function rowToPlatformModelConfig(row: PlatformModelRow): PlatformModelConfig {
   return {
+    roleId: row.id,
     provider: row.provider,
     modelId: row.model_id,
     apiBaseUrl: row.api_base_url ?? undefined,
@@ -63,6 +54,34 @@ export async function getPlatformModelConfig(): Promise<PlatformModelConfig | nu
     customHeaders: typeof row.settings.customHeaders === "string" ? row.settings.customHeaders : undefined,
     customParams: typeof row.settings.customParams === "string" ? row.settings.customParams : undefined,
   };
+}
+
+export async function getPlatformModelConfigs(): Promise<PlatformModelConfig[]> {
+  await ensurePlatformModelTable();
+  const result = await query<PlatformModelRow>(`
+    SELECT id, provider, model_id, api_base_url, connection_type, encrypted_api_key, settings
+    FROM platform_model_credentials
+    ORDER BY id
+  `);
+  return result.rows.map(rowToPlatformModelConfig);
+}
+
+export async function getPlatformModelConfig(roleId?: string): Promise<PlatformModelConfig | null> {
+  await ensurePlatformModelTable();
+  const result = await query<PlatformModelRow>(
+    `
+      SELECT id, provider, model_id, api_base_url, connection_type, encrypted_api_key, settings
+      FROM platform_model_credentials
+      WHERE id = $1 OR id = 'default'
+      ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END
+      LIMIT 1
+    `,
+    [roleId || "default"],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+
+  return rowToPlatformModelConfig(row);
 }
 
 export async function savePlatformModelConfig(
@@ -82,7 +101,7 @@ export async function savePlatformModelConfig(
       INSERT INTO platform_model_credentials (
         id, provider, model_id, api_base_url, connection_type, encrypted_api_key, settings, updated_by_user_id
       )
-      VALUES ('default', $1, $2, $3, $4, $5, $6::jsonb, $7)
+      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
       ON CONFLICT (id)
       DO UPDATE SET
         provider = EXCLUDED.provider,
@@ -95,6 +114,7 @@ export async function savePlatformModelConfig(
         updated_at = now()
     `,
     [
+      input.roleId || "default",
       input.provider,
       input.modelId,
       input.apiBaseUrl || null,
@@ -103,5 +123,16 @@ export async function savePlatformModelConfig(
       JSON.stringify(settings),
       userId,
     ],
+  );
+}
+
+export async function deletePlatformModelConfig(roleId: string): Promise<void> {
+  await ensurePlatformModelTable();
+  await query(
+    `
+      DELETE FROM platform_model_credentials
+      WHERE id = $1
+    `,
+    [roleId],
   );
 }

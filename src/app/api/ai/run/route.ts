@@ -8,7 +8,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const session = await getCurrentSession();
     const hasTenantApiKey = typeof body.apiKey === "string" && body.apiKey.trim().length > 0;
-    const platformModel = session && !hasTenantApiKey ? await getPlatformModelConfig() : null;
+    const roleId = typeof body.roleId === "string" ? body.roleId : undefined;
+    const platformModel = session && !hasTenantApiKey ? await getPlatformModelConfig(roleId) : null;
     const requestBody = platformModel
       ? {
           ...body,

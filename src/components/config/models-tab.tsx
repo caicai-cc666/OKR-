@@ -34,8 +34,15 @@ const costTierColor: Record<string, string> = { low: "bg-slate-50 text-slate-500
 const retryPolicyLabel: Record<string, string> = { none: "不重试", fixed: "固定间隔", exponential: "指数退避" };
 const reasoningModeLabel: Record<string, string> = { standard: "标准模式", extended: "深度推理" };
 
-function RoleModelCard({ role }: { role: RoleConfig }) {
-  const m = role.model;
+export interface RoleModelCardProps {
+  role: RoleConfig;
+  model?: RoleModelConfig;
+  onSaveModel?: (roleId: string, model: RoleModelConfig) => void | Promise<void>;
+  onResetModel?: (roleId: string) => void | Promise<void>;
+}
+
+export function RoleModelCard({ role, model, onSaveModel, onResetModel }: RoleModelCardProps) {
+  const m = model ?? role.model;
   const [expanded, setExpanded] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -95,12 +102,24 @@ function RoleModelCard({ role }: { role: RoleConfig }) {
   const handleSave = () => {
     const next = readFormModel();
     if (!next || !validateModel(next)) return;
+    if (onSaveModel) {
+      void Promise.resolve(onSaveModel(role.roleId, { ...next })).then(() => {
+        setDirty(false);
+      });
+      return;
+    }
     updateModelConfig(role.roleId, { ...next });
     setDirty(false);
     toast.success(`${role.roleName} 模型配置已保存`);
   };
 
   const handleResetDefault = () => {
+    if (onResetModel) {
+      void Promise.resolve(onResetModel(role.roleId)).then(() => {
+        setDirty(false);
+      });
+      return;
+    }
     const defaultRole = mockConfig.roles.find((r) => r.roleId === role.roleId);
     if (defaultRole) {
       updateModelConfig(role.roleId, { ...defaultRole.model });

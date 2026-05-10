@@ -90,7 +90,8 @@ function isJsonResponseFormatUnsupported(err: Error): boolean {
 async function callLive(
   systemPrompt: string,
   userPrompt: string,
-  model: RoleModelConfig
+  model: RoleModelConfig,
+  roleId?: string
 ): Promise<AICallResult> {
   const res = await fetch("/api/ai/run", {
     method: "POST",
@@ -98,6 +99,7 @@ async function callLive(
     body: JSON.stringify({
       systemPrompt,
       userPrompt,
+      roleId,
       provider: model.provider,
       modelId: model.modelId,
       temperature: model.temperature,
@@ -143,12 +145,12 @@ export async function runAgent(
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await callLive(systemPrompt, userInput, model);
+      return await callLive(systemPrompt, userInput, model, role.roleId);
     } catch (err) {
       lastError = err as Error;
       if (options?.jsonResponse && model !== role.model && isJsonResponseFormatUnsupported(lastError)) {
         try {
-          return await callLive(systemPrompt, userInput, role.model);
+          return await callLive(systemPrompt, userInput, role.model, role.roleId);
         } catch (fallbackErr) {
           lastError = fallbackErr as Error;
         }

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { callModel } from "@/app/api/ai/adapter";
 import { getCurrentSession } from "@/lib/server/auth";
-import { getPlatformModelConfig, savePlatformModelConfig } from "@/lib/server/platform-model";
+import { deletePlatformModelConfig, getPlatformModelConfig, getPlatformModelConfigs, savePlatformModelConfig } from "@/lib/server/platform-model";
+
+function isOpenAiCompatible(connectionType?: string) {
+  return connectionType === "thirdparty" || connectionType === "custom";
+}
 
 export async function GET() {
   const session = await getCurrentSession();
@@ -9,14 +13,15 @@ export async function GET() {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
-  const config = await getPlatformModelConfig();
-  if (!config) {
-    return NextResponse.json({ configured: false });
+  const configs = await getPlatformModelConfigs();
+  if (!configs.length) {
+    return NextResponse.json({ configured: false, configs: [] });
   }
 
   return NextResponse.json({
     configured: true,
-    config: {
+    configs: configs.map((config) => ({
+      roleId: config.roleId,
       provider: config.provider,
       modelId: config.modelId,
       apiBaseUrl: config.apiBaseUrl,
@@ -26,7 +31,7 @@ export async function GET() {
       customHeaders: config.customHeaders,
       customParams: config.customParams,
       apiKeyMasked: "********",
-    },
+    })),
   });
 }
 
@@ -37,6 +42,7 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as {
+    roleId?: string;
     provider?: string;
     modelId?: string;
     apiBaseUrl?: string;
@@ -49,20 +55,28 @@ export async function POST(request: Request) {
     testOnly?: boolean;
   };
 
-  const provider = body.provider?.trim();
-  const modelId = body.modelId?.trim();
+  const roleId = body.roleId?.trim();
+  const connectionType = body.connectionType || "official";
+  const provider = body.provider?.trim() || (isOpenAiCompatible(connectionType) ? "openai-compatible" : "");
+  const modelId = body.modelId?.trim() || (isOpenAiCompatible(connectionType) ? "auto" : "");
   const apiKey = body.apiKey?.trim();
 
-  if (!provider || !modelId || !apiKey) {
-    return NextResponse.json({ error: "服务商、模型名称和 API Key 不能为空" }, { status: 400 });
+  if (!roleId) {
+    return NextResponse.json({ error: "角色不能为空" }, { status: 400 });
+  }
+  const existingConfig = await getPlatformModelConfig(roleId);
+  const effectiveApiKey = apiKey || existingConfig?.apiKey;
+  if (!provider || !modelId || !effectiveApiKey) {
+    return NextResponse.json({ error: "服务提供方、模型名称和 API Key 不能为空" }, { status: 400 });
   }
 
   const config = {
+    roleId,
     provider,
     modelId,
     apiBaseUrl: body.apiBaseUrl?.trim() || undefined,
-    apiKey,
-    connectionType: body.connectionType || "official",
+    apiKey: effectiveApiKey,
+    connectionType,
     temperature: body.temperature,
     topP: body.topP,
     customHeaders: body.customHeaders,
@@ -87,5 +101,21 @@ export async function POST(request: Request) {
   }
 
   await savePlatformModelConfig(config, session.user.id);
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(request: Request) {
+  const session = await getCurrentSession();
+  if (!session || session.role !== "platform_owner") {
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const roleId = searchParams.get("roleId")?.trim();
+  if (!roleId) {
+    return NextResponse.json({ error: "角色不能为空" }, { status: 400 });
+  }
+
+  await deletePlatformModelConfig(roleId);
   return NextResponse.json({ ok: true });
 }
