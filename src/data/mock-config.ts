@@ -49,7 +49,7 @@ const defaultTagLibraries = {
 };
 
 export const mockConfig: AppConfig = {
-  runMode: "mock",
+  runMode: "live",
   strictLive: false,
   tagLibraries: defaultTagLibraries,
   roles: [

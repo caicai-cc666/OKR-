@@ -32,6 +32,14 @@ function cloneConfig(config: AppConfig): AppConfig {
   return JSON.parse(JSON.stringify(config)) as AppConfig;
 }
 
+function createTenantDefaultConfig(config: AppConfig = mockConfig): AppConfig {
+  return {
+    ...cloneConfig(config),
+    runMode: "live",
+    strictLive: false,
+  };
+}
+
 function ensureRoleModel(role: RoleConfig, config: AppConfig): RoleConfig {
   if (role.model) return role;
   const fallbackModel =
@@ -45,7 +53,7 @@ function ensureRoleModel(role: RoleConfig, config: AppConfig): RoleConfig {
 }
 
 function createDefaultTenantConfigs(config: AppConfig = mockConfig): Record<string, AppConfig> {
-  return Object.fromEntries(mockTenants.map((tenant) => [tenant.id, cloneConfig(config)]));
+  return Object.fromEntries(mockTenants.map((tenant) => [tenant.id, createTenantDefaultConfig(config)]));
 }
 
 function normalizeCasesForTenant(cases: OkrCase[]): OkrCase[] {
@@ -924,7 +932,7 @@ export const useAppStore = create<AppStore>()(
           const targetTenantId: string = platformMembership
             ? (requestedTenantId ?? s.currentTenantId ?? DEFAULT_TENANT_ID)
             : tenantMembership?.tenantId ?? s.currentTenantId ?? DEFAULT_TENANT_ID;
-          const nextConfig = s.tenantConfigs[targetTenantId] ?? cloneConfig(s.config);
+          const nextConfig = s.tenantConfigs[targetTenantId] ?? createTenantDefaultConfig();
 
           return {
             currentUserId: userId,
@@ -942,7 +950,7 @@ export const useAppStore = create<AppStore>()(
           const targetTenantId = session.tenants.some((tenant) => tenant.id === session.currentTenantId)
             ? session.currentTenantId
             : session.tenants[0]?.id ?? session.currentTenantId;
-          const nextConfig = s.tenantConfigs[targetTenantId] ?? cloneConfig(s.config);
+          const nextConfig = s.tenantConfigs[targetTenantId] ?? createTenantDefaultConfig();
 
           return {
             users: [session.user],
@@ -980,7 +988,7 @@ export const useAppStore = create<AppStore>()(
                 item.status === "active"
             );
           if (!canSwitch || !s.tenants.some((tenant) => tenant.id === tenantId)) return {};
-          const nextConfig = s.tenantConfigs[tenantId] ?? cloneConfig(s.config);
+          const nextConfig = s.tenantConfigs[tenantId] ?? createTenantDefaultConfig();
           return {
             currentTenantId: tenantId,
             config: nextConfig,
@@ -1669,7 +1677,7 @@ export const useAppStore = create<AppStore>()(
       },
 
       resetConfig: () => {
-        set((s) => withCurrentTenantConfig(s, cloneConfig(mockConfig)));
+        set((s) => withCurrentTenantConfig(s, createTenantDefaultConfig()));
       },
 
       updateRoleConfig: (roleId, partial) => {

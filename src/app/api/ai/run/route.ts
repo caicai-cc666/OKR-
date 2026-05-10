@@ -7,7 +7,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const session = await getCurrentSession();
-    const platformModel = session ? await getPlatformModelConfig() : null;
+    const hasTenantApiKey = typeof body.apiKey === "string" && body.apiKey.trim().length > 0;
+    const platformModel = session && !hasTenantApiKey ? await getPlatformModelConfig() : null;
     const requestBody = platformModel
       ? {
           ...body,

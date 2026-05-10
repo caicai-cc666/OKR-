@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/shared";
 import { AccountRoleLabel, roleHasPermission } from "@/types";
 import {
   AccountsTab,
+  ModelsTab,
   PlatformModelTab,
   RolesTab,
   RoleTagLibraryTab,
@@ -65,12 +66,10 @@ export default function ConfigPage() {
             <Tags className="w-3.5 h-3.5" />
             标签库
           </TabsTrigger>
-          {currentRole === "platform_owner" && (
-            <TabsTrigger value="models" className="gap-1.5 text-xs">
-              <Cpu className="w-3.5 h-3.5" />
-              模型配置
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="models" className="gap-1.5 text-xs">
+            <Cpu className="w-3.5 h-3.5" />
+            模型配置
+          </TabsTrigger>
           <TabsTrigger value="review" className="gap-1.5 text-xs">
             <ShieldCheck className="w-3.5 h-3.5" />
             KR 评分维度
@@ -97,11 +96,13 @@ export default function ConfigPage() {
           <RoleTagLibraryTab libraries={config.tagLibraries} />
         </TabsContent>
 
-        {currentRole === "platform_owner" && (
-          <TabsContent value="models">
+        <TabsContent value="models">
+          {currentRole === "platform_owner" ? (
             <PlatformModelTab />
-          </TabsContent>
-        )}
+          ) : (
+            <ModelsTab roles={config.roles} />
+          )}
+        </TabsContent>
 
         <TabsContent value="review">
           <ReviewRulesTab config={config.review} />
