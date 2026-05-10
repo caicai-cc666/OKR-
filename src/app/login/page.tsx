@@ -15,6 +15,10 @@ interface LoginResponse {
   error?: string;
 }
 
+const allowDemoMode =
+  process.env.NODE_ENV !== "production" ||
+  process.env.NEXT_PUBLIC_ALLOW_DEMO_LOGIN === "true";
+
 export default function LoginPage() {
   const router = useRouter();
   const applyServerSession = useAppStore((s) => s.applyServerSession);
@@ -30,7 +34,7 @@ export default function LoginPage() {
       .then(async (response) => {
         if (cancelled) return;
         if (response.status === 501) {
-          setDemoMode(true);
+          if (allowDemoMode) setDemoMode(true);
           return;
         }
         if (!response.ok) return;
@@ -41,7 +45,7 @@ export default function LoginPage() {
         }
       })
       .catch(() => {
-        if (!cancelled) setDemoMode(true);
+        if (!cancelled && allowDemoMode) setDemoMode(true);
       });
 
     return () => {
@@ -63,8 +67,12 @@ export default function LoginPage() {
       const data = (await response.json()) as LoginResponse;
 
       if (response.status === 501) {
-        setDemoMode(true);
-        toast.info("当前是本地演示模式，服务器登录尚未启用");
+        if (allowDemoMode) {
+          setDemoMode(true);
+          toast.info("当前是本地演示模式，服务器登录尚未启用");
+        } else {
+          toast.error("生产环境登录服务未启用，请检查服务器数据库配置");
+        }
         return;
       }
 
@@ -131,7 +139,7 @@ export default function LoginPage() {
 
           {demoMode && (
             <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
-              当前环境没有配置服务端数据库登录，会保留本地演示数据。生产服务器应使用真实账号登录。
+              当前环境没有配置服务端数据库登录，会保留本地演示数据。生产服务器不会启用演示登录。
             </p>
           )}
         </CardContent>

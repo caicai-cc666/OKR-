@@ -6,6 +6,10 @@ import { useAppStore } from "@/lib/store";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 
+const allowDemoMode =
+  process.env.NODE_ENV !== "production" ||
+  process.env.NEXT_PUBLIC_ALLOW_DEMO_LOGIN === "true";
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -23,17 +27,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .then(async (response) => {
         if (cancelled) return;
 
-        if (response.status === 501) {
+        if (response.status === 501 && allowDemoMode) {
           setAuthState("ready");
           return;
         }
 
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-
-        if (!response.ok) {
+        if (response.status === 401 || response.status === 501 || !response.ok) {
           router.replace("/login");
           return;
         }
@@ -45,7 +44,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setAuthState("ready");
       })
       .catch(() => {
-        if (!cancelled) setAuthState("ready");
+        if (!cancelled) {
+          if (allowDemoMode) {
+            setAuthState("ready");
+          } else {
+            router.replace("/login");
+          }
+        }
       });
 
     return () => {
