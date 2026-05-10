@@ -1,4 +1,4 @@
-import { OkrCase, CaseStatus, OkrDraftSet, FlowNodeRun } from "@/types";
+import { OkrCase, CaseStatus, OkrDraftSet } from "@/types";
 
 // ---- Helper: build a 3-version draft set from a balanced base ----
 

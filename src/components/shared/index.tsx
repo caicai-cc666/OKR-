@@ -144,7 +144,7 @@ export function CaseActionButton({
   switch (status) {
     case "info_insufficient":
       return (
-        <Link href={`/cases/${caseId}?tab=missing`}>
+        <Link href={`/cases/${caseId}?tab=factpack`}>
           <Button
             size={size}
             variant="outline"
@@ -156,7 +156,7 @@ export function CaseActionButton({
       );
     case "review_failed":
       return (
-        <Link href={`/cases/${caseId}?tab=review`}>
+        <Link href={`/cases/${caseId}?tab=drafts`}>
           <Button
             size={size}
             variant="outline"
@@ -168,7 +168,7 @@ export function CaseActionButton({
       );
     case "review_passed":
       return (
-        <Link href={`/cases/${caseId}?tab=draft`}>
+        <Link href={`/cases/${caseId}?tab=drafts`}>
           <Button
             size={size}
             variant="outline"

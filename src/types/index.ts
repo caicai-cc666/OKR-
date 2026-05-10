@@ -59,6 +59,69 @@ export function getDisplayStatus(status: CaseStatus): DisplayStatus {
   }
 }
 
+// ---- Account & Tenant Models ----
+
+export type AccountRole = "platform_owner" | "tenant_owner" | "tenant_admin" | "member";
+
+export const AccountRoleLabel: Record<AccountRole, string> = {
+  platform_owner: "平台超级管理员",
+  tenant_owner: "企业超级管理员",
+  tenant_admin: "企业普通管理员",
+  member: "企业普通用户",
+};
+
+export interface UserAccount {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface Tenant {
+  id: string;
+  name: string;
+  status: "active" | "inactive";
+  ownerUserId: string;
+  createdAt: string;
+}
+
+export interface TenantMembership {
+  id: string;
+  tenantId: string;
+  userId: string;
+  role: AccountRole;
+  status: "active" | "inactive";
+}
+
+export type Permission =
+  | "platform.manageTenants"
+  | "tenant.manageMembers"
+  | "tenant.manageConfig"
+  | "case.create"
+  | "case.readTenant"
+  | "case.readOwn";
+
+export const RolePermissions: Record<AccountRole, Permission[]> = {
+  platform_owner: [
+    "platform.manageTenants",
+    "tenant.manageMembers",
+    "tenant.manageConfig",
+    "case.create",
+    "case.readTenant",
+  ],
+  tenant_owner: [
+    "tenant.manageMembers",
+    "tenant.manageConfig",
+    "case.create",
+    "case.readTenant",
+  ],
+  tenant_admin: ["tenant.manageConfig", "case.create", "case.readTenant"],
+  member: ["case.create", "case.readOwn"],
+};
+
+export function roleHasPermission(role: AccountRole | undefined, permission: Permission): boolean {
+  return role ? RolePermissions[role].includes(permission) : false;
+}
+
 // Keep internal labels/colors for detail pages and state machine usage
 export const CaseStatusLabel: Record<CaseStatus, string> = {
   [CaseStatus.NEW]: "新建",
@@ -97,9 +160,23 @@ export interface IntakeInput {
   submittedBy: string;
 }
 
+/** Fact Pack 面向用户展示的结构化维度 */
+export interface FactPackStructuredDimensions {
+  strategicBackground: string[];
+  businessStatus: string[];
+  businessChain: string[];
+  bottlenecks: string[];
+  resourcesConstraints: string[];
+  organization: string[];
+  customerMarket: string[];
+  timeSuccessCriteria: string[];
+  other: string[];
+}
+
 /** 结构化后的事实包 */
 export interface FactPack {
   businessContext: string;
+  structuredDimensions?: FactPackStructuredDimensions;
   currentChallenges: string[];
   strategicGoals: string[];
   constraints: string[];
@@ -146,6 +223,7 @@ export interface KeyResult {
   assumptions?: string[];
   dependencies?: string[];
   risks?: string[];
+  reasoning?: string;
   confidence: number;
 }
 
@@ -186,6 +264,9 @@ export interface ReviewReport {
   overallScore: number;
   passed: boolean;
   needsHumanReview: boolean;
+  objectiveResults?: ReviewObjectiveResult[];
+  variantResults?: ReviewVariantResult[];
+  krReviews?: ReviewKrResult[];
   prerequisites: ReviewPrerequisite[];
   coreDimensions: ReviewDimension[];
   auxDimensions: ReviewDimension[];
@@ -193,6 +274,56 @@ export interface ReviewReport {
   suggestions: string[];
   reviewedAt: string;
   reviewedBy: string;
+}
+
+export interface ReviewObjectiveResult {
+  objectiveIndex: number;
+  objectiveTitle: string;
+  score: number;
+  passed: boolean;
+  passedKrCount: number;
+  totalKrCount: number;
+  reason?: string;
+}
+
+export interface ReviewVariantResult {
+  variant: DraftVariant;
+  score: number;
+  passed: boolean;
+  reason?: string;
+}
+
+export interface ReviewKrDimensionComment {
+  name: string;
+  score?: number;
+  comment: string;
+}
+
+export interface ReviewKrResult {
+  krId: string;
+  objectiveIndex?: number;
+  objectiveTitle?: string;
+  variant: DraftVariant;
+  score: number;
+  passed: boolean;
+  source?: "reviewer" | "local" | "pending";
+  summary?: string;
+  strengths: string[];
+  deductions: string[];
+  suggestions: string[];
+  dimensionComments?: ReviewKrDimensionComment[];
+}
+
+export interface CandidateKr {
+  id: string;
+  kr: KeyResult;
+  objectiveTitle: string;
+  objectiveDescription?: string;
+  variant: DraftVariant;
+  score?: number;
+  sourceRunId?: string;
+  sourceLabel?: string;
+  selectedAt: string;
 }
 
 export interface ReviewPrerequisite {
@@ -218,25 +349,123 @@ export interface FinalOkr {
 
 // ---- Case Model ----
 
+export type CaseRunStatus =
+  | "idle"
+  | "running"
+  | "completed_passed"
+  | "completed_quality_failed"
+  | "failed_no_result";
+
+export type CaseRunStage =
+  | "idle"
+  | "structuring"
+  | "waiting_for_info"
+  | "decomposing"
+  | "reviewing"
+  | "looping"
+  | "completed"
+  | "failed";
+
+export interface CaseRunEvent {
+  id: string;
+  runId: string;
+  timestamp: string;
+  actor: string;
+  title: string;
+  summary: string;
+  detail?: string;
+  kind: "user" | "interviewer" | "okr-expert" | "reviewer" | "coordinator" | "system";
+  iteration?: number;
+}
+
 export interface OkrCase {
   id: string;
+  tenantId?: string;
   title: string;
   status: CaseStatus;
   team: string;
   cycle: string;
   flowTemplateId: string;
   flowNodeRuns: FlowNodeRun[];
+  activeRunId?: string;
+  runStatus?: CaseRunStatus;
+  runStage?: CaseRunStage;
+  runStatusMessage?: string;
+  runEvents?: CaseRunEvent[];
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+  createdByUserId?: string;
   intake?: IntakeInput;
   factPack?: FactPack;
   missingInfo?: MissingInfoPack;
   okrDrafts?: OkrDraftSet;
   reviewReport?: ReviewReport;
   finalOkr?: FinalOkr;
+  candidateKrs?: CandidateKr[];
   logs: CaseLogEntry[];
   tags: string[];
+}
+
+export function canReadCaseForAccount(
+  c: OkrCase,
+  role: AccountRole | undefined,
+  currentTenantId: string | undefined,
+  currentUserId: string | undefined
+): boolean {
+  if (!role || !currentTenantId || !currentUserId) return false;
+  const caseTenantId = c.tenantId ?? currentTenantId;
+  if (caseTenantId !== currentTenantId) return false;
+  if (roleHasPermission(role, "case.readTenant")) return true;
+  return roleHasPermission(role, "case.readOwn") && c.createdByUserId === currentUserId;
+}
+
+export type CaseRunDisplayStatus =
+  | "running_waiting_for_info"
+  | "running_processing"
+  | "completed_passed"
+  | "completed_quality_failed"
+  | "failed_no_result";
+
+export const CaseRunDisplayLabel: Record<CaseRunDisplayStatus, string> = {
+  running_waiting_for_info: "进行中 · 等待用户补充信息",
+  running_processing: "进行中 · 拆解&审核中",
+  completed_passed: "已结束 · 质量达标",
+  completed_quality_failed: "已结束 · 质量未达标",
+  failed_no_result: "运行失败 · 无任何结果",
+};
+
+export const CaseRunDisplayColor: Record<CaseRunDisplayStatus, string> = {
+  running_waiting_for_info: "bg-amber-50 text-amber-700",
+  running_processing: "bg-blue-50 text-blue-700",
+  completed_passed: "bg-emerald-50 text-emerald-700",
+  completed_quality_failed: "bg-orange-50 text-orange-700",
+  failed_no_result: "bg-red-50 text-red-700",
+};
+
+export function getCaseRunDisplayStatus(c: OkrCase): CaseRunDisplayStatus {
+  if (c.runStatus === "running") {
+    return c.runStage === "waiting_for_info" ? "running_waiting_for_info" : "running_processing";
+  }
+  if (c.runStatus === "idle") return "running_waiting_for_info";
+  if (c.runStatus === "completed_passed") return "completed_passed";
+  if (c.runStatus === "completed_quality_failed") return "completed_quality_failed";
+  if (c.runStatus === "failed_no_result") return "failed_no_result";
+
+  if (c.status === CaseStatus.REVIEW_PASSED || c.status === CaseStatus.FINALIZED) return "completed_passed";
+  if (c.status === CaseStatus.REVIEW_FAILED || c.status === CaseStatus.HUMAN_REVIEW_REQUIRED) {
+    return c.okrDrafts ? "completed_quality_failed" : "failed_no_result";
+  }
+  if (c.status === CaseStatus.INFO_INSUFFICIENT) return "running_waiting_for_info";
+  return "running_processing";
+}
+
+export function isCaseRunBusy(c: OkrCase): boolean {
+  return c.runStatus === "running" && c.runStage !== "waiting_for_info";
+}
+
+export function canCaseAcceptUserInput(c: OkrCase): boolean {
+  return !isCaseRunBusy(c);
 }
 
 /** 案例日志条目 */
@@ -269,8 +498,8 @@ export interface RoleModelConfig {
   modelId: string;
   /** 温度 */
   temperature: number;
-  /** 最大 Token 数 */
-  maxTokens: number;
+  /** 最大 Token 数（兼容旧配置；新配置入口在流程模板中） */
+  maxTokens?: number;
   /** Top P */
   topP?: number;
   /** 超时时间（毫秒，UI 按分钟展示） */
@@ -299,19 +528,40 @@ export interface RoleConfig {
   roleId: string;
   roleName: string;
   description: string;
+  selectedTagIds?: RoleSelectedTagIds;
   principles: string[];
   generalSkills: string[];
   specializedSkills: string[];
   styleTraits: string[];
   systemPrompt: string;
   stylePrompt: string;
+  outputSchema?: string;
   maxRetries: number;
   operationalNotes: string;
   model: RoleModelConfig;
   enabled: boolean;
 }
 
+export interface RoleSelectedTagIds {
+  principles: string[];
+  capabilities: string[];
+  expressionStyles: string[];
+}
+
+export interface RoleTagItem {
+  id: string;
+  name: string;
+  definition: string;
+}
+
+export interface RoleTagLibraries {
+  principles: RoleTagItem[];
+  capabilities: RoleTagItem[];
+  expressionStyles: RoleTagItem[];
+}
+
 export interface ReviewConfig {
+  weightedRules?: ReviewWeightedRule[];
   passThreshold: number;
   humanReviewEnabled: boolean;
   humanReviewThreshold: number;
@@ -320,6 +570,12 @@ export interface ReviewConfig {
   coreDimensions: string[];
   auxDimensions: string[];
   failAction: "retry" | "human_review" | "halt";
+}
+
+export interface ReviewWeightedRule {
+  id: string;
+  label: string;
+  weight: number;
 }
 
 export interface FlowNodeRun {
@@ -364,15 +620,41 @@ export interface FlowTemplate {
   isDefault: boolean;
   nodes: FlowNodeConfig[];
   edges: FlowEdgeConfig[];
+  loopSettings?: FlowLoopSettings;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface FlowLoopSettings {
+  outerLoop: {
+    enabled: boolean;
+    maxIterations: number;
+  };
+  infoCheckLoop: {
+    enabled: boolean;
+    maxIterations: number;
+  };
+  okrReviewLoop: {
+    enabled: boolean;
+    passThreshold: number;
+    stopConditionMode: "or" | "and";
+    maxIterationsEnabled: boolean;
+    maxIterations: number;
+    maxTokensEnabled: boolean;
+    maxTokens: number;
+    timeoutEnabled: boolean;
+    timeoutSeconds: number;
+  };
 }
 
 export type RunMode = "mock" | "live";
 
 export interface AppConfig {
   runMode: RunMode;
+  /** When true, live mode failures throw instead of falling back to mock */
+  strictLive: boolean;
   roles: RoleConfig[];
+  tagLibraries?: RoleTagLibraries;
   review: ReviewConfig;
   flowTemplates: FlowTemplate[];
 }

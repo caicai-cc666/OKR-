@@ -1,12 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { toast } from "sonner";
 import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
+  Card, CardContent, CardHeader, CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import type { ReviewReport } from "@/types";
 import { CaseStatus } from "@/types";
 import { useAppStore } from "@/lib/store";
@@ -31,11 +32,13 @@ function ScoreBar({ name, score, maxScore, comment }: { name: string; score: num
   );
 }
 
-export function ReviewTab({ report, caseId }: { report: ReviewReport; caseId: string }) {
+export function ReviewTab({ report, caseId, onNavigateTab }: { report: ReviewReport; caseId: string; onNavigateTab?: (tab: string) => void }) {
   const updateCase = useAppStore((s) => s.updateCase);
   const addLog = useAppStore((s) => s.addLog);
   const retryDecomposition = useAppStore((s) => s.retryDecomposition);
-  const caseData = useAppStore((s) => s.getCase(caseId));
+  const caseData = useAppStore((s) => s.cases.find((c) => c.id === caseId));
+  const reviewConfig = useAppStore((s) => s.config.review);
+  const [retrySupplement, setRetrySupplement] = useState("");
 
   const handleMarkPassed = () => {
     const drafts = caseData?.okrDrafts;
@@ -54,13 +57,25 @@ export function ReviewTab({ report, caseId }: { report: ReviewReport; caseId: st
   };
 
   const handleRetry = () => {
-    retryDecomposition(caseId);
-    addLog(caseId, "重新拆解", "用户", "审核未通过，用户选择重新拆解");
-    toast.success("正在重新拆解...");
+    retryDecomposition(caseId, retrySupplement);
+    addLog(
+      caseId,
+      "重新拆解",
+      "用户",
+      retrySupplement.trim()
+        ? `审核未通过，带补充说明重新拆解：${retrySupplement.trim().slice(0, 80)}`
+        : "审核未通过，用户选择重新拆解"
+    );
+    setRetrySupplement("");
+    toast.success("正在基于原信息和补充说明重新拆解...");
   };
 
   const handleContinueEdit = () => {
-    toast.info("请切换到 Drafts 选项卡编辑草案");
+    if (onNavigateTab) {
+      onNavigateTab("drafts");
+    } else {
+      toast.info("请切换到 Drafts 选项卡编辑草案");
+    }
   };
 
   return (
@@ -80,6 +95,9 @@ export function ReviewTab({ report, caseId }: { report: ReviewReport; caseId: st
               </h3>
               <p className="text-sm text-slate-500 mt-0.5">
                 {report.reviewedBy} 于 {new Date(report.reviewedAt).toLocaleDateString("zh-CN")} 审核
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                通过阈值 {reviewConfig.passThreshold}/100{reviewConfig.humanReviewEnabled ? ` · 人工审核阈值 ${reviewConfig.humanReviewThreshold}/100` : ""}
               </p>
             </div>
             {/* Action buttons always visible */}
@@ -159,6 +177,20 @@ export function ReviewTab({ report, caseId }: { report: ReviewReport; caseId: st
                 </ul>
               </div>
             )}
+            <Separator className="border-red-100" />
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-600">重新拆解补充说明</p>
+              <Textarea
+                value={retrySupplement}
+                onChange={(e) => setRetrySupplement(e.target.value)}
+                placeholder="可补充你希望下一轮调整的方向，例如：更保守、聚焦续费率、预算只有 50 万、由增长团队承接..."
+                rows={3}
+                className="resize-none border-red-100 bg-white text-sm"
+              />
+              <p className="text-[11px] text-slate-400">
+                留空也可以直接重跑；填写后会附加到原始上下文里一起生成新草稿。
+              </p>
+            </div>
             <Separator className="border-red-100" />
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" className="gap-1.5 text-slate-600" onClick={handleContinueEdit}>

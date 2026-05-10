@@ -1,4 +1,3 @@
-export { OverviewTab } from "./overview-tab";
 export { InputsTab } from "./inputs-tab";
 export { FactPackTab } from "./factpack-tab";
 export { MissingInfoTab } from "./missing-info-tab";
@@ -7,3 +6,4 @@ export { ReviewTab } from "./review-tab";
 export { FinalTab } from "./final-tab";
 export { LogsTab } from "./logs-tab";
 export { FlowGraphTab } from "./flow-graph-tab";
+export { ReportTab } from "./report-tab";

@@ -1,35 +1,53 @@
 "use client";
 
+import { useState } from "react";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
-import { getDisplayStatus, CaseStatus } from "@/types";
-import { StatusBadge } from "@/components/shared";
+import { canReadCaseForAccount, CaseRunDisplayColor, CaseRunDisplayLabel, getCaseRunDisplayStatus, CaseStatus } from "@/types";
 import {
-  OverviewTab,
   InputsTab,
   FactPackTab,
-  MissingInfoTab,
   DraftsTab,
-  ReviewTab,
-  FinalTab,
   LogsTab,
   FlowGraphTab,
+  ReportTab,
 } from "@/components/case-detail";
 import {
   FileText, ListChecks, AlertCircle, Target,
-  ClipboardCheck, CheckCircle2, Users, CalendarRange,
+  ClipboardCheck, CheckCircle2, Users, CalendarRange, Clock,
 } from "lucide-react";
 
-export function CaseDetailClient({ id, tab }: { id: string; tab?: string }) {
-  const caseData = useAppStore((s) => s.getCase(id));
+function EmptyTabState({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <Clock className="w-8 h-8 text-slate-200 mb-3" />
+      <p className="text-sm text-slate-400">{label}</p>
+    </div>
+  );
+}
 
-  if (!caseData) {
+export function CaseDetailClient({ id, tab }: { id: string; tab?: string }) {
+  const caseData = useAppStore((s) => s.cases.find((c) => c.id === id));
+  const memberships = useAppStore((s) => s.memberships);
+  const currentUserId = useAppStore((s) => s.currentUserId);
+  const currentTenantId = useAppStore((s) => s.currentTenantId);
+  const normalizedInitialTab = tab === "missing" || tab === "overview" ? "factpack" : tab === "review" || tab === "final" ? "drafts" : tab;
+  const [activeTab, setActiveTab] = useState(normalizedInitialTab || "inputs");
+
+  const currentRole =
+    memberships.find((item) => item.userId === currentUserId && item.tenantId === currentTenantId && item.status === "active")?.role ??
+    memberships.find((item) => item.userId === currentUserId && item.role === "platform_owner" && item.status === "active")?.role;
+
+  if (!caseData || !canReadCaseForAccount(caseData, currentRole, currentTenantId, currentUserId)) {
     notFound();
   }
 
-  const ds = getDisplayStatus(caseData.status);
+  const runDisplay = getCaseRunDisplayStatus(caseData);
+  const decomposeRun = caseData.flowNodeRuns.find((run) => run.nodeId === "decompose");
+  const decompositionFailed = decomposeRun?.status === "failed" && !caseData.okrDrafts;
 
   const steps = [
     { key: "intake", label: "信息收集", icon: FileText, done: !!caseData.intake, active: caseData.status === CaseStatus.NEW || caseData.status === CaseStatus.INTAKE_RECEIVED },
@@ -46,7 +64,9 @@ export function CaseDetailClient({ id, tab }: { id: string; tab?: string }) {
       <div>
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-slate-900">{caseData.title}</h1>
-          <StatusBadge status={ds} />
+          <Badge variant="secondary" className={`${CaseRunDisplayColor[runDisplay]} border-0`}>
+            {CaseRunDisplayLabel[runDisplay]}
+          </Badge>
         </div>
         <div className="flex items-center gap-4 mt-1.5 text-sm text-slate-500">
           <span>{caseData.createdBy}</span>
@@ -55,6 +75,16 @@ export function CaseDetailClient({ id, tab }: { id: string; tab?: string }) {
           <span>创建于 {new Date(caseData.createdAt).toLocaleDateString("zh-CN")}</span>
         </div>
       </div>
+
+      {decompositionFailed && (
+        <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+          <div>
+            <p className="text-sm font-medium text-red-800">OKR 拆解失败</p>
+            <p className="mt-0.5 text-xs text-red-700">{decomposeRun?.error ?? "模型未生成可用草稿，请检查模型配置、补充业务背景或重新生成。"}</p>
+          </div>
+        </div>
+      )}
 
       {/* Progress Steps */}
       <Card className="border-slate-200 shadow-sm">
@@ -82,34 +112,42 @@ export function CaseDetailClient({ id, tab }: { id: string; tab?: string }) {
         </CardContent>
       </Card>
 
-      {/* 9 Tabs */}
-      <Tabs defaultValue={tab || "overview"} className="space-y-4">
+      {/* Controlled tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="bg-slate-100 flex-wrap h-auto gap-0.5 p-1">
-          <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
-          <TabsTrigger value="inputs" className="text-xs">Inputs</TabsTrigger>
-          {caseData.factPack && <TabsTrigger value="factpack" className="text-xs">Fact Pack</TabsTrigger>}
-          {caseData.missingInfo && (
-            <TabsTrigger value="missing" className="text-xs">
-              Missing Info
+          <TabsTrigger value="inputs" className="text-xs">原始输入</TabsTrigger>
+          <TabsTrigger value="factpack" className="text-xs">
+            信息整理
+            {caseData.missingInfo && caseData.missingInfo.missingFields.length > 0 && (
+              <>
               {caseData.missingInfo.missingFields.filter(f => f.priority === "high").length > 0 && (
                 <span className="ml-1 w-2 h-2 rounded-full bg-red-500 inline-block" />
               )}
-            </TabsTrigger>
-          )}
-          {caseData.okrDrafts && <TabsTrigger value="drafts" className="text-xs">Drafts</TabsTrigger>}
-          {caseData.reviewReport && <TabsTrigger value="review" className="text-xs">Review</TabsTrigger>}
-          <TabsTrigger value="final" className="text-xs">Final</TabsTrigger>
-          <TabsTrigger value="logs" className="text-xs">Logs</TabsTrigger>
-          <TabsTrigger value="flow" className="text-xs">Flow Graph</TabsTrigger>
+              </>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="drafts" className="text-xs">OKR 草稿</TabsTrigger>
+          <TabsTrigger value="report" className="text-xs">过程报告</TabsTrigger>
+          <TabsTrigger value="logs" className="text-xs">操作日志</TabsTrigger>
+          <TabsTrigger value="flow" className="text-xs">流程图</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview"><OverviewTab caseData={caseData} /></TabsContent>
         <TabsContent value="inputs"><InputsTab caseData={caseData} /></TabsContent>
-        {caseData.factPack && <TabsContent value="factpack"><FactPackTab factPack={caseData.factPack} /></TabsContent>}
-        {caseData.missingInfo && <TabsContent value="missing"><MissingInfoTab missingInfo={caseData.missingInfo} caseId={id} /></TabsContent>}
-        {caseData.okrDrafts && <TabsContent value="drafts"><DraftsTab drafts={caseData.okrDrafts} caseId={id} /></TabsContent>}
-        {caseData.reviewReport && <TabsContent value="review"><ReviewTab report={caseData.reviewReport} caseId={id} /></TabsContent>}
-        <TabsContent value="final"><FinalTab caseData={caseData} /></TabsContent>
+        <TabsContent value="factpack">
+          {caseData.factPack ? (
+            <FactPackTab factPack={caseData.factPack} missingInfo={caseData.missingInfo} caseId={id} />
+          ) : (
+            <EmptyTabState label="事实包尚未生成，请先完成信息收集与结构化" />
+          )}
+        </TabsContent>
+        <TabsContent value="drafts">
+          {caseData.okrDrafts ? (
+            <DraftsTab drafts={caseData.okrDrafts} caseId={id} />
+          ) : (
+            <EmptyTabState label={decompositionFailed ? `OKR 拆解失败：${decomposeRun?.error ?? "模型未生成可用草稿"}` : "OKR 草稿尚未生成，请先完成拆解"} />
+          )}
+        </TabsContent>
+        <TabsContent value="report"><ReportTab caseData={caseData} /></TabsContent>
         <TabsContent value="logs"><LogsTab logs={caseData.logs} /></TabsContent>
         <TabsContent value="flow"><FlowGraphTab caseData={caseData} /></TabsContent>
       </Tabs>

@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Card,
   CardContent,
@@ -7,8 +9,9 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { mockCases } from "@/data/mock-cases";
+import { useAppStore } from "@/lib/store";
 import {
+  canReadCaseForAccount,
   CaseStatus,
   CaseStatusLabel,
   CaseStatusColor,
@@ -22,7 +25,17 @@ import {
 import Link from "next/link";
 
 export default function ReviewPage() {
-  const reviewCases = mockCases.filter(
+  const cases = useAppStore((s) => s.cases);
+  const memberships = useAppStore((s) => s.memberships);
+  const currentUserId = useAppStore((s) => s.currentUserId);
+  const currentTenantId = useAppStore((s) => s.currentTenantId);
+  const currentRole =
+    memberships.find((item) => item.userId === currentUserId && item.tenantId === currentTenantId && item.status === "active")?.role ??
+    memberships.find((item) => item.userId === currentUserId && item.role === "platform_owner" && item.status === "active")?.role;
+  const visibleCases = cases.filter((item) =>
+    canReadCaseForAccount(item, currentRole, currentTenantId, currentUserId)
+  );
+  const reviewCases = visibleCases.filter(
     (c) =>
       c.status === CaseStatus.UNDER_REVIEW ||
       c.status === CaseStatus.HUMAN_REVIEW_REQUIRED ||
@@ -134,7 +147,7 @@ export default function ReviewPage() {
                         : "等待审核"}
                     </p>
                   </div>
-                  <Link href={`/cases/${c.id}`}>
+                  <Link href={`/cases/${c.id}?tab=drafts`}>
                     <Button variant="ghost" size="sm" className="gap-1.5">
                       查看详情
                       <ExternalLink className="w-3.5 h-3.5" />

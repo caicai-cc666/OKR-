@@ -1,12 +1,67 @@
 import type { AppConfig } from "@/types";
 
+const defaultLoopSettings = {
+  outerLoop: {
+    enabled: true,
+    maxIterations: 5,
+  },
+  infoCheckLoop: {
+    enabled: true,
+    maxIterations: 3,
+  },
+  okrReviewLoop: {
+    enabled: true,
+    passThreshold: 85,
+    stopConditionMode: "or" as const,
+    maxIterationsEnabled: true,
+    maxIterations: 3,
+    maxTokensEnabled: true,
+    maxTokens: 24000,
+    timeoutEnabled: true,
+    timeoutSeconds: 180,
+  },
+};
+
+const defaultTagLibraries = {
+  principles: [
+    { id: "principle-no-omission", name: "不遗漏关键信息", definition: "必须保留用户原始表达中的关键数据、约束、目标、负责人和语境，不因为格式不标准而丢失信息。" },
+    { id: "principle-no-fabrication", name: "不臆测", definition: "不得补充用户没有明确表达的信息；必须把不确定处标注为缺失或假设。" },
+    { id: "principle-traceable", name: "可追溯", definition: "重要判断必须能追溯到用户输入、Fact Pack、KR质量评分维度或流程配置。" },
+    { id: "principle-actionable", name: "可执行", definition: "输出必须能被业务团队直接理解和执行，避免抽象口号。" },
+    { id: "principle-outcome-first", name: "结果导向", definition: "优先围绕业务结果、用户价值和指标变化组织输出，而不是罗列任务。" },
+    { id: "principle-risk-aware", name: "风险透明", definition: "遇到风险、缺口、冲突或不确定性时明确说明，不用乐观表述掩盖问题。" },
+  ],
+  capabilities: [
+    { id: "cap-info-extraction", name: "信息提取", definition: "从自然语言中抽取目标、基线、指标、约束、风险、依赖、干系人等结构化字段。" },
+    { id: "cap-structured-thinking", name: "结构化表达", definition: "将复杂背景整理为层级清晰、字段明确、便于后续流程消费的信息结构。" },
+    { id: "cap-okr-methodology", name: "OKR 方法论", definition: "能区分 Objective、Key Result、任务和项目，避免把动作当成结果。" },
+    { id: "cap-metric-design", name: "指标设计", definition: "能识别领先/滞后指标，设计有基线、目标值和口径的 KR。" },
+    { id: "cap-quality-review", name: "质量审核", definition: "按 KR 质量评分维度、权重和流程阈值对 OKR 进行逐项评分并说明原因。" },
+    { id: "cap-flow-orchestration", name: "流程编排", definition: "根据流程模板、循环条件和节点状态决定下一步动作并记录日志。" },
+  ],
+  expressionStyles: [
+    { id: "style-rigorous", name: "严谨", definition: "表达准确，区分事实、假设、判断和建议。" },
+    { id: "style-direct", name: "直接", definition: "直接指出问题和原因，不用含糊表达绕开关键矛盾。" },
+    { id: "style-constructive", name: "建设性", definition: "指出问题时同步给出可操作的改进方向。" },
+    { id: "style-concise", name: "简洁", definition: "优先使用清晰短句和结构化段落，避免堆砌解释。" },
+    { id: "style-transparent", name: "透明", definition: "说明为什么这样判断、依据是什么、下一步会发生什么。" },
+  ],
+};
+
 export const mockConfig: AppConfig = {
   runMode: "mock",
+  strictLive: false,
+  tagLibraries: defaultTagLibraries,
   roles: [
     {
       roleId: "interviewer",
       roleName: "信息整理官",
       description: "负责将用户自然语言输入结构化为事实包，识别缺失信息",
+      selectedTagIds: {
+        principles: ["principle-no-omission", "principle-no-fabrication", "principle-traceable"],
+        capabilities: ["cap-info-extraction", "cap-structured-thinking"],
+        expressionStyles: ["style-rigorous", "style-transparent"],
+      },
       principles: [
         "不遗漏用户原始表达中的任何关键信息",
         "不添加用户未表达的假设",
@@ -23,6 +78,7 @@ export const mockConfig: AppConfig = {
       systemPrompt:
         "你是一个专业的业务访谈官，擅长从用户的自由描述中提取结构化信息。你需要将用户的自然语言输入转化为结构化的事实包（FactPack），包括业务背景、战略目标、当前挑战、约束条件、干系人、时间范围、基线数据、候选指标、风险、依赖、非目标等维度。如果信息不足，你需要明确标注缺失字段并给出追问建议。",
       stylePrompt: "输出格式清晰、字段完整、不遗漏、不臆测",
+      outputSchema: "FactPack JSON：businessContext、strategicGoals、currentChallenges、constraints、stakeholders、timeframe、baselines、candidateMetrics、risks、dependencies、nonGoals；MissingInfoPack JSON：missingFields[{field, reason, priority, suggestion}]。",
       maxRetries: 2,
       operationalNotes: "对于模糊输入，优先标记为缺失而非猜测填充",
       model: {
@@ -31,9 +87,7 @@ export const mockConfig: AppConfig = {
         providerDisplayName: "Anthropic 官方",
         modelId: "claude-sonnet-4-6",
         temperature: 0.3,
-        maxTokens: 4096,
         topP: 0.9,
-        timeout: 60000,
         retryPolicy: "exponential",
         reasoningMode: "standard",
         costTier: "medium",
@@ -45,6 +99,11 @@ export const mockConfig: AppConfig = {
       roleName: "OKR 拆解专家",
       description:
         "基于充足的事实信息拆解出保守/平衡/进取三版 OKR 草稿",
+      selectedTagIds: {
+        principles: ["principle-outcome-first", "principle-actionable", "principle-risk-aware"],
+        capabilities: ["cap-okr-methodology", "cap-metric-design", "cap-structured-thinking"],
+        expressionStyles: ["style-direct", "style-constructive"],
+      },
       principles: [
         "OKR 不是任务列表，Objective 必须是成果导向",
         "Key Result 必须可衡量，不接受模糊表述",
@@ -65,6 +124,7 @@ export const mockConfig: AppConfig = {
         "你是一位资深的 OKR 教练，精通 Andy Grove 和 John Doerr 的 OKR 方法论。你需要基于结构化的事实包，为用户生成三个不同强度的 OKR 方案：保守型（高置信度、低风险）、平衡型（适度挑战）、进取型（高目标、高风险）。每个方案必须包含清晰的 Objective 和可量化的 Key Results，并附带完整的推导说明，解释为什么这样拆、为什么是这个强度、为什么选这些 KR。你应该能识别并拒绝：把任务当 KR、把口号当 O、缺乏基线的目标。",
       stylePrompt:
         "每版方案必须附带推导说明，解释拆解逻辑和强度选择理由",
+      outputSchema: "OkrDraftSet JSON：conservative、balanced、aggressive；每版包含 variant、objectives[{title, description, keyResults[{title, metric, currentValue, targetValue, owner, deadline, confidence}]}]、reasoning。",
       maxRetries: 3,
       operationalNotes:
         "三版方案的 confidence 应明显不同：保守型 0.8+、平衡型 0.6-0.8、进取型 0.3-0.5",
@@ -74,9 +134,7 @@ export const mockConfig: AppConfig = {
         providerDisplayName: "Anthropic 官方",
         modelId: "claude-opus-4-6",
         temperature: 0.5,
-        maxTokens: 8192,
         topP: 0.95,
-        timeout: 120000,
         retryPolicy: "exponential",
         reasoningMode: "extended",
         costTier: "high",
@@ -86,7 +144,12 @@ export const mockConfig: AppConfig = {
     {
       roleId: "reviewer",
       roleName: "审核官",
-      description: "按多维度评分体系审核 OKR 草稿质量",
+      description: "按 KR 质量评分维度审核 OKR 草稿质量",
+      selectedTagIds: {
+        principles: ["principle-traceable", "principle-risk-aware", "principle-no-fabrication"],
+        capabilities: ["cap-quality-review", "cap-metric-design"],
+        expressionStyles: ["style-rigorous", "style-direct", "style-constructive"],
+      },
       principles: [
         "评分必须有依据，不接受无理由打分",
         "必要条件不满足则直接不通过",
@@ -101,8 +164,9 @@ export const mockConfig: AppConfig = {
       ],
       styleTraits: ["严格", "公正", "建设性"],
       systemPrompt:
-        "你是一个严格的 OKR 审核官，按照 SMART 原则和多维度评分体系审核 OKR 草稿。你需要检查必要条件是否满足，然后对核心维度（战略一致性、目标清晰度、KR 可衡量性、结果导向性）和辅助维度（难度合理性、owner 清晰度、依赖完整性、风险识别、表达质量）进行评分。如果发现致命问题，必须明确标注。",
+        "你是一个严格的 OKR 审核官，按照 KR 质量评分维度和权重逐条审核 KR。你需要判断每条 KR 是否结果导向、可衡量、能承接 Objective 和业务背景、难度是否合理、表述是否清晰，并说明扣分原因。流程通过阈值、通过条数和循环停止条件由流程配置决定，不在角色定义中硬编码。",
       stylePrompt: "评价客观、有理有据、给出可操作的修改建议",
+      outputSchema: "ReviewReport JSON：overallScore、passed、needsHumanReview、variantResults[{variant, score, passed, reason}]、prerequisites、coreDimensions、auxDimensions、fatalIssues、suggestions。",
       maxRetries: 2,
       operationalNotes: "评分低于阈值时必须给出至少一条具体修改建议",
       model: {
@@ -111,9 +175,7 @@ export const mockConfig: AppConfig = {
         providerDisplayName: "Anthropic 官方",
         modelId: "claude-opus-4-6",
         temperature: 0.2,
-        maxTokens: 4096,
         topP: 0.9,
-        timeout: 90000,
         retryPolicy: "fixed",
         reasoningMode: "extended",
         costTier: "high",
@@ -124,6 +186,11 @@ export const mockConfig: AppConfig = {
       roleId: "coordinator",
       roleName: "协调器",
       description: "负责流程编排、状态流转和角色调度",
+      selectedTagIds: {
+        principles: ["principle-traceable", "principle-risk-aware"],
+        capabilities: ["cap-flow-orchestration"],
+        expressionStyles: ["style-transparent", "style-concise"],
+      },
       principles: [
         "严格按照流程模板执行",
         "状态流转必须记录日志",
@@ -139,6 +206,7 @@ export const mockConfig: AppConfig = {
       systemPrompt:
         "你是系统协调器，负责根据流程模板编排各角色的执行顺序，管理状态流转，处理条件分支和回退逻辑。每次状态变化都需要记录日志。",
       stylePrompt: "所有操作透明可追溯",
+      outputSchema: "流程事件记录：action、actor、detail、timestamp；必要时输出下一步节点、状态变更原因和停止条件。",
       maxRetries: 1,
       operationalNotes: "协调器本身不生成业务内容，只负责流转",
       model: {
@@ -147,9 +215,7 @@ export const mockConfig: AppConfig = {
         providerDisplayName: "Anthropic 官方",
         modelId: "claude-haiku-4-5-20251001",
         temperature: 0.1,
-        maxTokens: 2048,
         topP: 0.9,
-        timeout: 30000,
         retryPolicy: "fixed",
         reasoningMode: "standard",
         costTier: "low",
@@ -158,7 +224,17 @@ export const mockConfig: AppConfig = {
     },
   ],
   review: {
-    passThreshold: 80,
+    weightedRules: [
+      { id: "objective-clear", label: "Objective 基本清晰", weight: 10 },
+      { id: "kr-measurable", label: "至少有可衡量 KR", weight: 20 },
+      { id: "outcome-oriented", label: "KR 基本结果导向", weight: 15 },
+      { id: "time-boundary", label: "有时间边界", weight: 10 },
+      { id: "context-consistent", label: "与输入背景无明显冲突", weight: 10 },
+      { id: "strategy-aligned", label: "战略一致性", weight: 15 },
+      { id: "target-clarity", label: "目标清晰度", weight: 10 },
+      { id: "result-quality", label: "结果导向性", weight: 10 },
+    ],
+    passThreshold: 85,
     humanReviewEnabled: true,
     humanReviewThreshold: 60,
     maxRetries: 2,
@@ -168,11 +244,25 @@ export const mockConfig: AppConfig = {
       "KR 基本结果导向",
       "有时间边界",
       "与输入背景无明显冲突",
+      "战略一致性",
+      "目标清晰度",
+      "KR 可衡量性",
+      "结果导向性",
     ],
-    coreDimensions: ["战略一致性", "目标清晰度", "KR 可衡量性", "结果导向性"],
+    coreDimensions: [
+      "Objective 基本清晰",
+      "至少有可衡量 KR",
+      "KR 基本结果导向",
+      "有时间边界",
+      "与输入背景无明显冲突",
+      "战略一致性",
+      "目标清晰度",
+      "KR 可衡量性",
+      "结果导向性",
+    ],
     auxDimensions: [
       "难度合理性",
-      "Owner 清晰度",
+      "责任归属清晰度（团队可作为 owner）",
       "依赖完整性",
       "风险识别",
       "表达质量",
@@ -203,6 +293,7 @@ export const mockConfig: AppConfig = {
         { id: "e6", source: "review", target: "finalize", label: "通过", condition: "review_passed" },
         { id: "e7", source: "review", target: "decompose", label: "不通过", condition: "review_failed" },
       ],
+      loopSettings: defaultLoopSettings,
       createdAt: "2026-04-01T00:00:00Z",
       updatedAt: "2026-04-01T00:00:00Z",
     },
@@ -223,6 +314,14 @@ export const mockConfig: AppConfig = {
         { id: "e3", source: "review", target: "finalize", label: "通过", condition: "review_passed" },
         { id: "e4", source: "review", target: "decompose", label: "不通过", condition: "review_failed" },
       ],
+      loopSettings: {
+        ...defaultLoopSettings,
+        okrReviewLoop: {
+          ...defaultLoopSettings.okrReviewLoop,
+          maxIterations: 2,
+          timeoutSeconds: 90,
+        },
+      },
       createdAt: "2026-04-05T00:00:00Z",
       updatedAt: "2026-04-05T00:00:00Z",
     },
@@ -250,6 +349,14 @@ export const mockConfig: AppConfig = {
         { id: "e7", source: "human-review", target: "finalize", label: "确认通过", condition: "human_approved" },
         { id: "e8", source: "human-review", target: "decompose", label: "退回修改", condition: "human_rejected" },
       ],
+      loopSettings: {
+        ...defaultLoopSettings,
+        okrReviewLoop: {
+          ...defaultLoopSettings.okrReviewLoop,
+          maxIterations: 4,
+          timeoutSeconds: 240,
+        },
+      },
       createdAt: "2026-04-10T00:00:00Z",
       updatedAt: "2026-04-10T00:00:00Z",
     },

@@ -1,27 +1,53 @@
 "use client";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
 import { useAppStore } from "@/lib/store";
 import { PageHeader } from "@/components/shared";
+import { AccountRoleLabel, roleHasPermission } from "@/types";
 import {
   RolesTab,
+  RoleTagLibraryTab,
   ModelsTab,
   ReviewRulesTab,
   FlowConfigTab,
   JsonTab,
 } from "@/components/config";
 import {
-  Bot, Cpu, ShieldCheck, Workflow, FileJson,
+  Bot, Cpu, ShieldCheck, Workflow, FileJson, Tags,
 } from "lucide-react";
 
 export default function ConfigPage() {
   const config = useAppStore((s) => s.config);
+  const memberships = useAppStore((s) => s.memberships);
+  const currentUserId = useAppStore((s) => s.currentUserId);
+  const currentTenantId = useAppStore((s) => s.currentTenantId);
+  const currentRole =
+    memberships.find((item) => item.userId === currentUserId && item.tenantId === currentTenantId && item.status === "active")?.role ??
+    memberships.find((item) => item.userId === currentUserId && item.role === "platform_owner" && item.status === "active")?.role;
+  const canManageConfig = roleHasPermission(currentRole, "tenant.manageConfig");
+
+  if (!canManageConfig) {
+    return (
+      <div className="space-y-6 max-w-5xl">
+        <PageHeader
+          title="系统配置"
+          description="当前账号只能使用 OKR 拆解，不能修改企业配置"
+        />
+        <Card className="border-slate-200 shadow-sm">
+          <CardContent className="p-6 text-sm text-slate-600">
+            当前角色：{currentRole ? AccountRoleLabel[currentRole] : "未识别角色"}。如需配置角色、模型、评分维度或流程，请联系企业管理员。
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-5xl">
       <PageHeader
         title="系统配置"
-        description="配置角色定义、模型参数、审核规则和流程模板"
+        description="配置角色定义、模型参数、KR质量评分维度和流程模板"
       />
 
       <Tabs defaultValue="roles" className="space-y-4">
@@ -30,13 +56,17 @@ export default function ConfigPage() {
             <Bot className="w-3.5 h-3.5" />
             角色配置
           </TabsTrigger>
+          <TabsTrigger value="tag-library" className="gap-1.5 text-xs">
+            <Tags className="w-3.5 h-3.5" />
+            标签库
+          </TabsTrigger>
           <TabsTrigger value="models" className="gap-1.5 text-xs">
             <Cpu className="w-3.5 h-3.5" />
             模型配置
           </TabsTrigger>
           <TabsTrigger value="review" className="gap-1.5 text-xs">
             <ShieldCheck className="w-3.5 h-3.5" />
-            审核规则
+            KR评分维度
           </TabsTrigger>
           <TabsTrigger value="flow" className="gap-1.5 text-xs">
             <Workflow className="w-3.5 h-3.5" />
@@ -50,6 +80,10 @@ export default function ConfigPage() {
 
         <TabsContent value="roles">
           <RolesTab roles={config.roles} />
+        </TabsContent>
+
+        <TabsContent value="tag-library">
+          <RoleTagLibraryTab libraries={config.tagLibraries} />
         </TabsContent>
 
         <TabsContent value="models">

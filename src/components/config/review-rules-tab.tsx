@@ -8,57 +8,113 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import type { ReviewConfig } from "@/types";
+import type { ReviewConfig, ReviewWeightedRule } from "@/types";
 import { useAppStore } from "@/lib/store";
-import { X } from "lucide-react";
+import {
+  downloadJson,
+  isRecord,
+  makeExportEnvelope,
+  readJsonFile,
+  safeFilePart,
+  unwrapConfigImport,
+  type ReviewRuleExportPayload,
+} from "@/lib/config-transfer";
+import { Download, Upload, X } from "lucide-react";
+
+function defaultWeightedRules(config: ReviewConfig): ReviewWeightedRule[] {
+  if (config.weightedRules?.length) return config.weightedRules;
+  const rules = [...new Set([...config.prerequisites, ...config.coreDimensions].map((item) => item.trim()).filter(Boolean))];
+  const weight = rules.length ? Math.round(100 / rules.length) : 10;
+  return rules.map((label, index) => ({
+    id: `rule-${index}-${label}`,
+    label,
+    weight,
+  }));
+}
 
 export function ReviewRulesTab({ config }: { config: ReviewConfig }) {
   const updateReviewConfig = useAppStore((s) => s.updateReviewConfig);
 
-  const [passThreshold, setPassThreshold] = useState(config.passThreshold);
-  const [humanThreshold, setHumanThreshold] = useState(config.humanReviewThreshold);
-  const [maxRetries, setMaxRetries] = useState(config.maxRetries);
-  const [humanEnabled, setHumanEnabled] = useState(config.humanReviewEnabled);
-  const [failAction, setFailAction] = useState(config.failAction);
-  const [prerequisites, setPrerequisites] = useState([...config.prerequisites]);
-  const [coreDims, setCoreDims] = useState([...config.coreDimensions]);
+  const [requiredRules, setRequiredRules] = useState<ReviewWeightedRule[]>(defaultWeightedRules(config));
   const [auxDims, setAuxDims] = useState([...config.auxDimensions]);
-  const [newPrereq, setNewPrereq] = useState("");
-  const [newCoreDim, setNewCoreDim] = useState("");
+  const [newRequiredRule, setNewRequiredRule] = useState("");
+  const [newRequiredWeight, setNewRequiredWeight] = useState("");
   const [newAuxDim, setNewAuxDim] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const totalWeight = requiredRules.reduce((sum, rule) => sum + (Number(rule.weight) || 0), 0);
 
   const handleSave = () => {
-    if (passThreshold <= 0 || passThreshold > 100) { toast.error("通过阈值应在 1-100 之间"); return; }
-    if (humanThreshold <= 0 || humanThreshold > passThreshold) { toast.error("人工审核阈值应小于等于通过阈值"); return; }
+    const cleaned = requiredRules
+      .map((rule) => ({ ...rule, label: rule.label.trim(), weight: Number(rule.weight) || 0 }))
+      .filter((rule) => rule.label);
+    if (cleaned.length === 0) { toast.error("至少保留一条 KR 质量评分维度"); return; }
+    if (cleaned.some((rule) => rule.weight <= 0 || rule.weight > 100)) {
+      toast.error("每个维度权重应在 1-100% 之间");
+      return;
+    }
     updateReviewConfig({
-      passThreshold,
-      humanReviewThreshold: humanThreshold,
-      maxRetries,
-      humanReviewEnabled: humanEnabled,
-      failAction,
-      prerequisites,
-      coreDimensions: coreDims,
+      weightedRules: cleaned,
+      prerequisites: cleaned.map((rule) => rule.label),
+      coreDimensions: cleaned.map((rule) => rule.label),
       auxDimensions: auxDims,
     });
-    toast.success("审核规则已保存");
+    setDirty(false);
+    toast.success("KR质量评分维度已保存");
   };
 
-  const addPrereq = () => {
-    const v = newPrereq.trim();
-    if (!v) { toast.error("条件不能为空"); return; }
-    if (prerequisites.includes(v)) { toast.error("条件已存在"); return; }
-    setPrerequisites([...prerequisites, v]);
-    setNewPrereq("");
+  const addRequiredRule = () => {
+    const v = newRequiredRule.trim();
+    const weight = Number.parseInt(newRequiredWeight, 10);
+    if (!v) { toast.error("评分维度不能为空"); return; }
+    if (requiredRules.some((rule) => rule.label === v)) { toast.error("评分维度已存在"); return; }
+    if (!Number.isFinite(weight) || weight <= 0 || weight > 100) {
+      toast.error("请填写 1-100 之间的整数权重");
+      return;
+    }
+    setRequiredRules([...requiredRules, { id: `rule-${Date.now()}`, label: v, weight }]);
+    setNewRequiredRule("");
+    setNewRequiredWeight("");
+    setDirty(true);
   };
 
-  const addCoreDim = () => {
-    const v = newCoreDim.trim();
-    if (!v) { toast.error("评分项不能为空"); return; }
-    if (coreDims.includes(v)) { toast.error("评分项已存在"); return; }
-    setCoreDims([...coreDims, v]);
-    setNewCoreDim("");
+  const handleExportRule = (rule: ReviewWeightedRule) => {
+    const data = makeExportEnvelope<ReviewRuleExportPayload>("review-rule", rule.label, { rule });
+    downloadJson(`okr-review-rule-${safeFilePart(rule.label)}.json`, data);
+    toast.success("KR 评分维度 JSON 已导出");
+  };
+
+  const handleImportRuleAt = async (index: number) => {
+    let parsed: unknown;
+    try {
+      parsed = await readJsonFile();
+    } catch {
+      toast.error("JSON 文件读取失败，请检查文件格式");
+      return;
+    }
+
+    const imported = unwrapConfigImport(parsed);
+    const payload = imported.payload;
+    const importedRule =
+      isRecord(payload) && isRecord(payload.rule)
+        ? (payload.rule as unknown as ReviewWeightedRule)
+        : isRecord(payload) && typeof payload.label === "string"
+          ? (payload as unknown as ReviewWeightedRule)
+          : undefined;
+
+    if (!importedRule?.label) {
+      toast.error("未识别到单条 KR 评分维度");
+      return;
+    }
+
+    const next = [...requiredRules];
+    next[index] = {
+      id: next[index]?.id ?? importedRule.id ?? `rule-${Date.now()}`,
+      label: importedRule.label,
+      weight: Number(importedRule.weight) || 0,
+    };
+    setRequiredRules(next);
+    setDirty(true);
+    toast.success("KR 评分维度已导入到当前行");
   };
 
   const addAuxDim = () => {
@@ -67,114 +123,110 @@ export function ReviewRulesTab({ config }: { config: ReviewConfig }) {
     if (auxDims.includes(v)) { toast.error("评分项已存在"); return; }
     setAuxDims([...auxDims, v]);
     setNewAuxDim("");
+    setDirty(true);
   };
 
   return (
     <div className="space-y-4">
-      {/* Thresholds */}
-      <Card className="border-slate-200 shadow-sm">
-        <CardHeader className="pb-3"><CardTitle className="text-base">阈值配置</CardTitle></CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-emerald-50/50 rounded-lg p-4 border border-emerald-100">
-              <Label className="text-xs text-emerald-600">通过阈值</Label>
-              <Input type="number" value={passThreshold} onChange={(e) => setPassThreshold(Number(e.target.value))} className="mt-1 w-24 border-emerald-200 text-lg font-bold text-emerald-700" />
-              <p className="text-xs text-emerald-500 mt-1">分以上自动通过</p>
-            </div>
-            <div className="bg-amber-50/50 rounded-lg p-4 border border-amber-100">
-              <Label className="text-xs text-amber-600">人工审核阈值</Label>
-              <Input type="number" value={humanThreshold} onChange={(e) => setHumanThreshold(Number(e.target.value))} className="mt-1 w-24 border-amber-200 text-lg font-bold text-amber-700" />
-              <p className="text-xs text-amber-500 mt-1">分以上需人工审核</p>
-            </div>
-            <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-              <Label className="text-xs text-slate-500">最大重试</Label>
-              <Input type="number" value={maxRetries} onChange={(e) => setMaxRetries(Number(e.target.value))} className="mt-1 w-24 border-slate-200 text-lg font-bold text-slate-700" />
-              <p className="text-xs text-slate-400 mt-1">次不通过后终止</p>
-            </div>
-          </div>
-          <Separator />
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Label className="text-sm text-slate-700">启用人工审核</Label>
-              <Button variant="outline" size="sm" className={`text-xs ${humanEnabled ? "text-emerald-600 border-emerald-200" : "text-slate-400"}`}
-                onClick={() => setHumanEnabled(!humanEnabled)}>
-                {humanEnabled ? "已启用" : "已禁用"}
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-sm text-slate-700">审核失败默认动作</Label>
-              <select value={failAction} onChange={(e) => setFailAction(e.target.value as ReviewConfig["failAction"])} className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700">
-                <option value="retry">自动重试</option>
-                <option value="human_review">转人工审核</option>
-                <option value="halt">停止流程</option>
-              </select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Prerequisites */}
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">必要条件</CardTitle>
-          <CardDescription className="text-xs">不满足则直接不通过</CardDescription>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-base">KR质量评分维度</CardTitle>
+            <Badge variant="secondary" className={`border-0 text-xs ${totalWeight === 100 ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>
+              权重合计 {totalWeight}%
+            </Badge>
+          </div>
+          <CardDescription className="text-xs leading-relaxed">
+            由审核官用于给单条 KR 打质量分。这里不设置通过阈值、循环次数或人工审核条件；这些流程规则请在流程配置里设置。
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
-          {prerequisites.map((p, i) => (
+          {requiredRules.map((rule, i) => (
             <div key={i} className="flex items-center gap-2">
-              <Input value={p} onChange={(e) => { const n = [...prerequisites]; n[i] = e.target.value; setPrerequisites(n); }} className="text-xs border-slate-200 flex-1" />
-              <Button variant="ghost" size="sm" className="text-red-400 text-xs px-2" onClick={() => setPrerequisites(prerequisites.filter((_, j) => j !== i))}>
+              <Input
+                value={rule.label}
+                onChange={(e) => {
+                  const n = [...requiredRules];
+                  n[i] = { ...n[i], label: e.target.value };
+                  setRequiredRules(n);
+                  setDirty(true);
+                }}
+                className="text-xs border-slate-200 flex-1"
+              />
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  step={1}
+                  inputMode="numeric"
+                  value={rule.weight}
+                  onChange={(e) => {
+                    const n = [...requiredRules];
+                    n[i] = { ...n[i], weight: Number.parseInt(e.target.value, 10) || 0 };
+                    setRequiredRules(n);
+                    setDirty(true);
+                  }}
+                  className="text-xs border-slate-200 w-20"
+                />
+                <span className="text-xs text-slate-400">%</span>
+              </div>
+              <Button variant="ghost" size="sm" className="px-2 text-xs text-slate-400" onClick={() => handleExportRule(rule)}>
+                <Download className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="sm" className="px-2 text-xs text-slate-400" onClick={() => handleImportRuleAt(i)}>
+                <Upload className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="sm" className="text-red-400 text-xs px-2" onClick={() => {
+                setRequiredRules(requiredRules.filter((_, j) => j !== i));
+                setDirty(true);
+              }}>
                 <X className="w-3.5 h-3.5" />
               </Button>
             </div>
           ))}
           <div className="flex items-center gap-2">
-            <Input value={newPrereq} onChange={(e) => setNewPrereq(e.target.value)} placeholder="输入新条件..." className="text-xs border-slate-200 flex-1" onKeyDown={(e) => e.key === "Enter" && addPrereq()} />
-            <Button variant="outline" size="sm" className="text-xs" onClick={addPrereq}>添加</Button>
+            <Input value={newRequiredRule} onChange={(e) => setNewRequiredRule(e.target.value)} placeholder="输入新维度，如：可衡量性、结果导向、战略承接..." className="text-xs border-slate-200 flex-1" onKeyDown={(e) => e.key === "Enter" && addRequiredRule()} />
+            <Input type="number" min={1} max={100} step={1} inputMode="numeric" value={newRequiredWeight} onChange={(e) => setNewRequiredWeight(e.target.value)} placeholder="权重" className="text-xs border-slate-200 w-20" />
+            <span className="text-xs text-slate-400">%</span>
+            <Button variant="outline" size="sm" className="text-xs" onClick={addRequiredRule}>添加</Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Core Dimensions */}
       <Card className="border-slate-200 shadow-sm">
-        <CardHeader className="pb-2"><CardTitle className="text-sm">核心评分项（1-10 分）</CardTitle></CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {coreDims.map((dim) => (
-              <Badge key={dim} variant="outline" className="text-xs text-slate-600 border-slate-200 px-3 py-1 gap-1">
-                {dim}
-                <button onClick={() => setCoreDims(coreDims.filter((d) => d !== dim))} className="text-red-400 hover:text-red-600 ml-1"><X className="w-3 h-3" /></button>
-              </Badge>
-            ))}
-          </div>
-          <div className="flex items-center gap-2 mt-3">
-            <Input value={newCoreDim} onChange={(e) => setNewCoreDim(e.target.value)} placeholder="新评分项..." className="text-xs border-slate-200 w-40" onKeyDown={(e) => e.key === "Enter" && addCoreDim()} />
-            <Button variant="outline" size="sm" className="text-xs" onClick={addCoreDim}>添加</Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Aux Dimensions */}
-      <Card className="border-slate-200 shadow-sm">
-        <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">辅助评分项</CardTitle></CardHeader>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm text-slate-500">辅助加减分项</CardTitle>
+          <CardDescription className="text-xs">作为小幅修正参考，不直接决定单条 KR 是否过线。</CardDescription>
+        </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
             {auxDims.map((dim) => (
               <Badge key={dim} variant="outline" className="text-xs text-slate-400 border-slate-200 px-3 py-1 gap-1">
                 {dim}
-                <button onClick={() => setAuxDims(auxDims.filter((d) => d !== dim))} className="text-red-400 hover:text-red-600 ml-1"><X className="w-3 h-3" /></button>
+                <button onClick={() => {
+                  setAuxDims(auxDims.filter((d) => d !== dim));
+                  setDirty(true);
+                }} className="text-red-400 hover:text-red-600 ml-1"><X className="w-3 h-3" /></button>
               </Badge>
             ))}
           </div>
           <div className="flex items-center gap-2 mt-3">
-            <Input value={newAuxDim} onChange={(e) => setNewAuxDim(e.target.value)} placeholder="新评分项..." className="text-xs border-slate-200 w-40" onKeyDown={(e) => e.key === "Enter" && addAuxDim()} />
+            <Input value={newAuxDim} onChange={(e) => setNewAuxDim(e.target.value)} placeholder="新辅助项..." className="text-xs border-slate-200 w-40" onKeyDown={(e) => e.key === "Enter" && addAuxDim()} />
             <Button variant="outline" size="sm" className="text-xs" onClick={addAuxDim}>添加</Button>
           </div>
         </CardContent>
       </Card>
 
       <div className="flex justify-end">
-        <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={handleSave}>保存审核规则</Button>
+        <Button
+          size="sm"
+          disabled={!dirty}
+          className={dirty ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-200 text-slate-500 hover:bg-slate-200"}
+          onClick={handleSave}
+        >
+          {dirty ? "保存评分维度" : "已保存"}
+        </Button>
       </div>
     </div>
   );

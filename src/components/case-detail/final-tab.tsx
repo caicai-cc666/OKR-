@@ -1,13 +1,18 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Card, CardContent, CardHeader, CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { OkrCase } from "@/types";
-import { Target, CheckCircle2, Copy, Download } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import type { KeyResult, Objective, OkrCase } from "@/types";
+import { useAppStore } from "@/lib/store";
+import { Target, CheckCircle2, Copy, Download, GitBranch } from "lucide-react";
 
 function objectivesToMarkdown(caseData: OkrCase): string {
   const objectives = caseData.finalOkr?.objectives ?? caseData.okrDrafts?.balanced.objectives ?? [];
@@ -16,7 +21,11 @@ function objectivesToMarkdown(caseData: OkrCase): string {
   for (const obj of objectives) {
     md += `## O: ${obj.title}\n\n${obj.description}\n\n`;
     for (const kr of obj.keyResults) {
-      md += `- **KR: ${kr.title}**\n  - 指标: ${kr.metric} | 基线: ${kr.currentValue} | 目标: ${kr.targetValue}\n`;
+      md += `- **KR: ${kr.title}**`;
+      if (kr.owner || kr.deadline) {
+        md += `\n  - ${[kr.owner ? `Owner: ${kr.owner}` : "", kr.deadline ? `截止: ${kr.deadline}` : ""].filter(Boolean).join(" | ")}`;
+      }
+      md += "\n";
     }
     md += "\n";
   }
@@ -34,6 +43,95 @@ function downloadFile(content: string, filename: string, type: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function ChildDecompositionPanel({
+  caseData,
+  objective,
+  keyResult,
+}: {
+  caseData: OkrCase;
+  objective: Objective;
+  keyResult: KeyResult;
+}) {
+  const router = useRouter();
+  const createCase = useAppStore((s) => s.createCase);
+  const startAnalysis = useAppStore((s) => s.startAnalysis);
+  const [open, setOpen] = useState(false);
+  const [team, setTeam] = useState("");
+  const [cycle, setCycle] = useState(caseData.cycle);
+  const [background, setBackground] = useState("");
+
+  const handleCreateChild = () => {
+    if (!background.trim()) {
+      toast.error("请补充下级业务背景");
+      return;
+    }
+
+    const childTeam = team.trim() || `${caseData.team} 下级团队`;
+    const childCycle = cycle.trim() || caseData.cycle;
+    const rawText = [
+      "这是从上级 OKR 下钻产生的下级拆解。",
+      `上级案例：${caseData.title}`,
+      `上级团队：${caseData.team}`,
+      `上级 Objective：${objective.title}`,
+      `承接 Key Result：${keyResult.title}`,
+      keyResult.owner ? `上级 KR owner：${keyResult.owner}` : "",
+      "",
+      `下级承接团队：${childTeam}`,
+      `下级周期：${childCycle}`,
+      `下级业务背景：${background.trim()}`,
+    ].filter(Boolean).join("\n");
+
+    const id = createCase(`承接 KR：${keyResult.title}`, childTeam, childCycle, rawText);
+    startAnalysis(id);
+    toast.success("已创建下级拆解案例");
+    router.push(`/cases/${id}?tab=factpack`);
+  };
+
+  return (
+    <div className="mt-3 border-t border-slate-100 pt-3">
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1.5 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+        onClick={() => setOpen(!open)}
+      >
+        <GitBranch className="w-3.5 h-3.5" />
+        {open ? "收起下级拆解" : "从此 KR 拆下一级"}
+      </Button>
+      {open && (
+        <div className="mt-3 space-y-3 rounded-lg border border-blue-100 bg-blue-50/30 p-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Input
+              value={team}
+              onChange={(e) => setTeam(e.target.value)}
+              placeholder={`下级团队，默认：${caseData.team} 下级团队`}
+              className="bg-white border-blue-100 text-sm"
+            />
+            <Input
+              value={cycle}
+              onChange={(e) => setCycle(e.target.value)}
+              placeholder="下级周期"
+              className="bg-white border-blue-100 text-sm"
+            />
+          </div>
+          <Textarea
+            value={background}
+            onChange={(e) => setBackground(e.target.value)}
+            placeholder="补充下级业务背景：这个团队负责什么、现状数据、资源约束、希望如何承接上级 KR..."
+            rows={4}
+            className="resize-none bg-white border-blue-100 text-sm"
+          />
+          <div className="flex justify-end">
+            <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={handleCreateChild}>
+              开始下级拆解
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function FinalTab({ caseData }: { caseData: OkrCase }) {
@@ -79,11 +177,13 @@ export function FinalTab({ caseData }: { caseData: OkrCase }) {
             {obj.keyResults.map((kr) => (
               <div key={kr.id} className="bg-slate-50 rounded-lg p-4 border border-slate-100">
                 <p className="text-sm font-medium text-slate-800">{kr.title}</p>
-                <div className="flex items-center gap-6 mt-2 text-xs text-slate-500">
-                  <span>指标: {kr.metric}</span>
-                  <span>基线: {kr.currentValue}</span>
-                  <span>目标: {kr.targetValue}</span>
-                </div>
+                {(kr.owner || kr.deadline) && (
+                  <div className="flex items-center gap-6 mt-2 text-xs text-slate-500">
+                    {kr.owner && <span>Owner: {kr.owner}</span>}
+                    {kr.deadline && <span>截止: {kr.deadline}</span>}
+                  </div>
+                )}
+                <ChildDecompositionPanel caseData={caseData} objective={obj} keyResult={kr} />
               </div>
             ))}
           </CardContent>

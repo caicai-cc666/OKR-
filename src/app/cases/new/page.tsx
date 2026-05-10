@@ -30,20 +30,24 @@ export default function NewCasePage() {
   const router = useRouter();
   const createCase = useAppStore((s) => s.createCase);
   const startAnalysis = useAppStore((s) => s.startAnalysis);
+  const flowTemplates = useAppStore((s) => s.config.flowTemplates);
   const [title, setTitle] = useState("");
   const [team, setTeam] = useState("");
   const [cycle, setCycle] = useState("");
   const [rawText, setRawText] = useState("");
+  const [flowTemplateId, setFlowTemplateId] = useState("");
   const [loading, setLoading] = useState(false);
 
   const canSubmit = title.trim() && rawText.trim();
+  const defaultFlowTemplate = flowTemplates.find((template) => template.isDefault) ?? flowTemplates[0];
+  const selectedFlowTemplateId = flowTemplateId || defaultFlowTemplate?.id || "flow-standard";
 
   const handleSaveDraft = () => {
     if (!title.trim()) {
       toast.error("请输入案例标题");
       return;
     }
-    const id = createCase(title.trim(), team.trim() || "默认团队", cycle.trim() || "Q3 2026", rawText.trim());
+    const id = createCase(title.trim(), team.trim() || "默认团队", cycle.trim() || "Q3 2026", rawText.trim(), selectedFlowTemplateId);
     toast.success("草稿已保存");
     router.push(`/cases/${id}`);
   };
@@ -54,14 +58,14 @@ export default function NewCasePage() {
       return;
     }
     setLoading(true);
-    const id = createCase(title.trim(), team.trim() || "默认团队", cycle.trim() || "Q3 2026", rawText.trim());
+    const id = createCase(title.trim(), team.trim() || "默认团队", cycle.trim() || "Q3 2026", rawText.trim(), selectedFlowTemplateId);
     toast.success("案例已创建，开始分析...");
 
     // Start analysis asynchronously
     startAnalysis(id);
 
     // Navigate immediately
-    router.push(`/cases/${id}?tab=overview`);
+    router.push(`/cases/${id}?tab=factpack`);
   };
 
   return (
@@ -78,7 +82,7 @@ export default function NewCasePage() {
         <Info className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
         <div className="text-sm text-blue-700 leading-relaxed">
           <span className="font-medium">你不需要先分类。</span>{" "}
-          只要描述清楚你的业务背景、目标和约束，OKR拆解会自动完成信息整理、结构化拆解、多维度审核。你将获得保守、平衡、进取三版方案供选择。
+          只要描述清楚你的业务背景、目标和约束，OKR拆解会自动完成信息整理、结构化拆解、多维度审核。每个 Objective 会拆出保守、平衡、进取不同强度的 KR。
         </div>
       </div>
 
@@ -127,6 +131,26 @@ export default function NewCasePage() {
                 className="mt-1.5 border-slate-200"
               />
             </div>
+          </div>
+          <div>
+            <Label htmlFor="flowTemplate" className="text-sm text-slate-700">
+              拆解流程
+            </Label>
+            <select
+              id="flowTemplate"
+              value={selectedFlowTemplateId}
+              onChange={(e) => setFlowTemplateId(e.target.value)}
+              className="mt-1.5 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition-colors focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+            >
+              {flowTemplates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name}{template.isDefault ? "（默认标准流程）" : ""}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-400">
+              每个案例可以选择不同流程；默认使用系统配置中的标准流程。
+            </p>
           </div>
         </CardContent>
       </Card>

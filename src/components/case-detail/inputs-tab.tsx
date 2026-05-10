@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { canCaseAcceptUserInput } from "@/types";
 import type { OkrCase } from "@/types";
 import { useAppStore } from "@/lib/store";
 import { Pencil, RotateCcw, Loader2 } from "lucide-react";
@@ -18,10 +19,11 @@ export function InputsTab({ caseData }: { caseData: OkrCase }) {
 
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(caseData.intake?.rawText ?? "");
-  const [supplement, setSupplement] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
+  const canEdit = canCaseAcceptUserInput(caseData);
 
   const handleSaveEdit = () => {
+    if (!canEdit) { toast.info("当前流程正在拆解或审核中，暂时不能修改输入"); return; }
     if (!editText.trim()) { toast.error("输入内容不能为空"); return; }
     updateCase(caseData.id, {
       intake: { rawText: editText, submittedAt: new Date().toISOString(), submittedBy: "用户" },
@@ -31,18 +33,8 @@ export function InputsTab({ caseData }: { caseData: OkrCase }) {
     toast.success("输入内容已更新");
   };
 
-  const handleSubmitSupplement = () => {
-    if (!supplement.trim()) { toast.error("补充内容不能为空"); return; }
-    const newText = (caseData.intake?.rawText ?? "") + "\n\n【补充说明】" + supplement;
-    updateCase(caseData.id, {
-      intake: { rawText: newText, submittedAt: new Date().toISOString(), submittedBy: "用户" },
-    });
-    addLog(caseData.id, "提交补充", "用户", supplement.slice(0, 50));
-    setSupplement("");
-    toast.success("补充信息已提交");
-  };
-
   const handleReanalyze = () => {
+    if (!canEdit) { toast.info("当前流程正在拆解或审核中，请等待本轮结束"); return; }
     setAnalyzing(true);
     addLog(caseData.id, "重新分析", "用户", "用户触发重新分析");
     startAnalysis(caseData.id);
@@ -61,13 +53,14 @@ export function InputsTab({ caseData }: { caseData: OkrCase }) {
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" className="gap-1.5 text-slate-600"
+                disabled={!canEdit}
                 onClick={() => { setEditing(!editing); setEditText(caseData.intake?.rawText ?? ""); }}>
                 <Pencil className="w-3.5 h-3.5" />{editing ? "取消" : "编辑"}
               </Button>
               <Button variant="outline" size="sm" className="gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50"
-                disabled={analyzing} onClick={handleReanalyze}>
+                disabled={analyzing || !canEdit} onClick={handleReanalyze}>
                 {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                重新分析
+                重新拆解
               </Button>
             </div>
           </div>
@@ -76,9 +69,10 @@ export function InputsTab({ caseData }: { caseData: OkrCase }) {
           {editing ? (
             <div className="space-y-3">
               <Textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={8}
+                disabled={!canEdit}
                 className="border-slate-200 resize-none text-sm leading-relaxed" />
               <div className="flex justify-end">
-                <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={handleSaveEdit}>保存修改</Button>
+                <Button size="sm" className="bg-blue-600 hover:bg-blue-700" disabled={!canEdit} onClick={handleSaveEdit}>保存修改</Button>
               </div>
             </div>
           ) : caseData.intake ? (
@@ -88,24 +82,6 @@ export function InputsTab({ caseData }: { caseData: OkrCase }) {
           ) : (
             <p className="text-sm text-slate-400">暂无输入</p>
           )}
-        </CardContent>
-      </Card>
-
-      <Card className="border-slate-200 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-base">补充说明</CardTitle>
-          <CardDescription>添加初次输入时遗漏的补充信息</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Textarea value={supplement} onChange={(e) => setSupplement(e.target.value)}
-            placeholder="在这里补充额外的业务背景、数据或约束条件..." rows={4}
-            className="border-slate-200 resize-none text-sm" />
-          <div className="flex justify-end">
-            <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={handleSubmitSupplement}
-              disabled={!supplement.trim()}>
-              提交补充
-            </Button>
-          </div>
         </CardContent>
       </Card>
     </div>

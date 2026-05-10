@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   Card, CardContent, CardHeader, CardTitle,
 } from "@/components/ui/card";
@@ -8,11 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import type { OkrCase, FlowNodeRun, FlowNodeConfig } from "@/types";
+import { CaseStatus } from "@/types";
 import { useAppStore } from "@/lib/store";
 import {
   Circle, Square, Diamond, Hexagon, ArrowRight,
   RotateCcw, Bot, CheckCircle2, XCircle, Clock, Loader2,
-  X,
+  X, AlertTriangle,
 } from "lucide-react";
 
 const nodeTypeIcon: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -42,18 +44,82 @@ function getNodeRun(runs: FlowNodeRun[], nodeId: string): FlowNodeRun | undefine
   return runs.find((r) => r.nodeId === nodeId);
 }
 
+function resolvedStatus(run: FlowNodeRun | undefined, nodeId: string, caseData: OkrCase): FlowNodeRun["status"] {
+  if (run?.status !== "running") return run?.status ?? "pending";
+  if (nodeId === "structuring" && caseData.factPack) return "success";
+  if (nodeId === "info-check") {
+    if (caseData.status === CaseStatus.INFO_INSUFFICIENT) return "failed";
+    if (caseData.factPack && !caseData.missingInfo?.missingFields.some((field) => field.priority === "high")) return "success";
+  }
+  if (nodeId === "decompose" && caseData.okrDrafts) return "success";
+  if ((nodeId === "review" || nodeId === "auto-review") && caseData.reviewReport) {
+    return caseData.reviewReport.passed ? "success" : "failed";
+  }
+  if (nodeId === "finalize" && caseData.finalOkr) return "success";
+  return "running";
+}
+
+/** Generate input/output summaries for a node based on case data */
+function getNodeSummary(nodeId: string, caseData: OkrCase): { input?: string; output?: string } {
+  switch (nodeId) {
+    case "intake":
+      return {
+        input: caseData.intake?.rawText ? `${caseData.intake.rawText.slice(0, 80)}${caseData.intake.rawText.length > 80 ? "..." : ""}` : undefined,
+        output: caseData.intake ? "已接收用户输入" : undefined,
+      };
+    case "structuring":
+      return {
+        input: caseData.intake?.rawText ? `原始输入 ${caseData.intake.rawText.length} 字` : undefined,
+        output: caseData.factPack ? `已结构化: ${caseData.factPack.strategicGoals.length} 个目标, ${caseData.factPack.currentChallenges.length} 个挑战` : undefined,
+      };
+    case "info-check":
+      return {
+        input: caseData.factPack ? "事实包已就绪" : undefined,
+        output: caseData.missingInfo ? `缺失 ${caseData.missingInfo.missingFields.length} 项信息` : caseData.factPack ? "信息充足" : undefined,
+      };
+    case "decompose":
+      return {
+        input: caseData.factPack ? `事实包: ${caseData.factPack.strategicGoals.length} 个目标` : undefined,
+        output: caseData.okrDrafts ? `OKR 草稿已生成 (${caseData.okrDrafts.balanced.generatedBy})` : undefined,
+      };
+    case "review":
+    case "auto-review":
+      return {
+        input: caseData.okrDrafts ? "Objective 草稿待审核" : undefined,
+        output: caseData.reviewReport ? `Objective 审核 ${caseData.reviewReport.objectiveResults?.filter((item) => item.passed).length ?? 0}/${caseData.reviewReport.objectiveResults?.length ?? 0} 通过` : undefined,
+      };
+    case "finalize":
+      return {
+        input: caseData.reviewReport ? `审核评分 ${caseData.reviewReport.overallScore}` : undefined,
+        output: caseData.finalOkr ? `v${caseData.finalOkr.version} 已定稿` : undefined,
+      };
+    default:
+      return {};
+  }
+}
+
+const unsupportedNodes = new Set(["finalize", "human-review"]);
+
 function NodeDetail({
   node,
   run,
+  caseData,
+  rerunning,
   onRerun,
   onClose,
 }: {
   node: FlowNodeConfig;
   run?: FlowNodeRun;
+  caseData: OkrCase;
+  rerunning: boolean;
   onRerun: () => void;
   onClose: () => void;
 }) {
   const role = useAppStore((s) => s.config.roles.find((r) => r.roleId === node.roleId));
+  const runMode = useAppStore((s) => s.config.runMode);
+  const summary = getNodeSummary(node.id, caseData);
+  const isRunning = rerunning || run?.status === "running";
+  const canRerun = !unsupportedNodes.has(node.id);
 
   return (
     <Card className="border-blue-200 shadow-md">
@@ -76,21 +142,40 @@ function NodeDetail({
             <p className="text-slate-700 font-medium">{role?.roleName ?? node.roleId}</p>
           </div>
           <div>
-            <p className="text-slate-400">执行状态</p>
-            <Badge variant="secondary" className={`text-[10px] ${statusStyle[run?.status ?? "pending"]}`}>
-              {statusLabel[run?.status ?? "pending"]}
+          <p className="text-slate-400">执行状态</p>
+            <Badge variant="secondary" className={`text-[10px] ${statusStyle[resolvedStatus(run, node.id, caseData)]}`}>
+              {statusLabel[resolvedStatus(run, node.id, caseData)]}
             </Badge>
           </div>
           <div>
             <p className="text-slate-400">使用模型</p>
             <p className="text-slate-700 font-mono text-[10px]">{role?.model.modelId ?? "—"}</p>
           </div>
+          <div>
+            <p className="text-slate-400">运行模式</p>
+            <Badge variant="secondary" className={`text-[10px] ${runMode === "live" ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-500"}`}>
+              {runMode === "live" ? "Live" : "Mock"}
+            </Badge>
+          </div>
+          {run?.startedAt && (
+            <div>
+              <p className="text-slate-400">开始时间</p>
+              <p className="text-slate-600">{new Date(run.startedAt).toLocaleString("zh-CN")}</p>
+            </div>
+          )}
         </div>
 
-        {run?.startedAt && (
+        {summary.input && (
           <div>
-            <p className="text-slate-400">开始时间</p>
-            <p className="text-slate-600">{new Date(run.startedAt).toLocaleString("zh-CN")}</p>
+            <p className="text-slate-400">输入摘要</p>
+            <p className="text-slate-600 break-all">{summary.input}</p>
+          </div>
+        )}
+
+        {summary.output && (
+          <div>
+            <p className="text-slate-400">输出摘要</p>
+            <p className="text-slate-600">{summary.output}</p>
           </div>
         )}
 
@@ -110,15 +195,23 @@ function NodeDetail({
         <Separator />
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
-            onClick={onRerun}
-          >
-            <RotateCcw className="w-3 h-3" />
-            从此节点重跑
-          </Button>
+          {canRerun ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+              onClick={onRerun}
+              disabled={isRunning}
+            >
+              {isRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+              {isRunning ? "重跑中..." : "从此节点重跑"}
+            </Button>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <AlertTriangle className="w-3 h-3" />
+              该节点不支持自动重跑
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -127,6 +220,7 @@ function NodeDetail({
 
 export function FlowGraphTab({ caseData }: { caseData: OkrCase }) {
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [rerunningNode, setRerunningNode] = useState<string | null>(null);
   const rerunNode = useAppStore((s) => s.rerunNode);
 
   const template = useAppStore((s) => {
@@ -140,6 +234,32 @@ export function FlowGraphTab({ caseData }: { caseData: OkrCase }) {
 
   const runs = caseData.flowNodeRuns;
   const selected = template.nodes.find((n) => n.id === selectedNode);
+
+  const handleRerun = (nodeId: string) => {
+    setRerunningNode(nodeId);
+    const result = rerunNode(caseData.id, nodeId);
+
+    switch (result) {
+      case "started":
+        toast.success("重跑已启动，请关注节点状态变化");
+        // Keep panel open so user can watch status change
+        // Clear rerunning after a short delay (the async pipeline will update node status)
+        setTimeout(() => setRerunningNode(null), 2000);
+        break;
+      case "unsupported":
+        toast.warning("该节点不支持自动重跑");
+        setRerunningNode(null);
+        break;
+      case "no-data":
+        toast.error("重跑所需的前置数据不存在，请先完成前序步骤");
+        setRerunningNode(null);
+        break;
+      case "error":
+        toast.error("重跑失败，请检查案例状态");
+        setRerunningNode(null);
+        break;
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -159,7 +279,7 @@ export function FlowGraphTab({ caseData }: { caseData: OkrCase }) {
             {template.nodes.map((node, i) => {
               const Icon = nodeTypeIcon[node.nodeType] || Square;
               const run = getNodeRun(runs, node.id);
-              const status = run?.status ?? "pending";
+              const status = resolvedStatus(run, node.id, caseData);
               const isSelected = selectedNode === node.id;
               const StatusIcon = status === "success" ? CheckCircle2
                 : status === "failed" ? XCircle
@@ -222,7 +342,9 @@ export function FlowGraphTab({ caseData }: { caseData: OkrCase }) {
           .map((edge) => {
             const sourceRun = getNodeRun(runs, edge.source);
             const targetRun = getNodeRun(runs, edge.target);
-            const active = sourceRun?.status === "success" && targetRun && targetRun.status !== "pending";
+            const active = resolvedStatus(sourceRun, edge.source, caseData) === "success"
+              && targetRun
+              && resolvedStatus(targetRun, edge.target, caseData) !== "pending";
             return (
               <Badge
                 key={edge.id}
@@ -235,15 +357,36 @@ export function FlowGraphTab({ caseData }: { caseData: OkrCase }) {
           })}
       </div>
 
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">回旋执行记录</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {caseData.logs
+            .filter((log) => ["开始分析", "信息检查", "补充信息", "开始拆解", "拆解暂停", "信息检查通过", "拆解完成", "审核通过", "审核未通过", "重新拆解", "重新拆解暂停", "重新拆解完成"].includes(log.action))
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+            .map((log) => (
+              <div key={log.id} className="flex items-start gap-2 text-xs">
+                <Badge variant="outline" className="shrink-0 text-[10px] text-slate-500">
+                  {new Date(log.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                </Badge>
+                <div>
+                  <p className="font-medium text-slate-700">{log.actor} · {log.action}</p>
+                  {log.detail && <p className="text-slate-500">{log.detail}</p>}
+                </div>
+              </div>
+            ))}
+        </CardContent>
+      </Card>
+
       {/* Node Detail Panel */}
       {selected && (
         <NodeDetail
           node={selected}
           run={getNodeRun(runs, selected.id)}
-          onRerun={() => {
-            rerunNode(caseData.id, selected.id);
-            setSelectedNode(null);
-          }}
+          caseData={caseData}
+          rerunning={rerunningNode === selected.id}
+          onRerun={() => handleRerun(selected.id)}
           onClose={() => setSelectedNode(null)}
         />
       )}
