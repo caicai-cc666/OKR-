@@ -454,6 +454,13 @@ interface AppStore {
   hasPermission: (permission: Permission) => boolean;
   getVisibleCases: () => OkrCase[];
   loginAs: (userId: string, tenantId?: string) => void;
+  applyServerSession: (session: {
+    user: UserAccount;
+    tenants: Tenant[];
+    memberships: TenantMembership[];
+    currentTenantId: string;
+  }) => void;
+  logoutLocal: () => void;
   switchTenant: (tenantId: string) => void;
 
   // --- Case reads ---
@@ -925,6 +932,36 @@ export const useAppStore = create<AppStore>()(
               [targetTenantId]: nextConfig,
             },
           };
+        });
+      },
+      applyServerSession: (session) => {
+        set((s) => {
+          const targetTenantId = session.tenants.some((tenant) => tenant.id === session.currentTenantId)
+            ? session.currentTenantId
+            : session.tenants[0]?.id ?? session.currentTenantId;
+          const nextConfig = s.tenantConfigs[targetTenantId] ?? cloneConfig(s.config);
+
+          return {
+            users: [session.user],
+            tenants: session.tenants,
+            memberships: session.memberships,
+            currentUserId: session.user.id,
+            currentTenantId: targetTenantId,
+            config: nextConfig,
+            tenantConfigs: {
+              ...s.tenantConfigs,
+              [targetTenantId]: nextConfig,
+            },
+          };
+        });
+      },
+      logoutLocal: () => {
+        set({
+          users: [],
+          tenants: [],
+          memberships: [],
+          currentUserId: "",
+          currentTenantId: "",
         });
       },
       switchTenant: (tenantId) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ChevronRight,
   LayoutDashboard,
@@ -22,6 +22,7 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const currentUser = useAppStore((s) => s.users.find((user) => user.id === s.currentUserId));
   const currentTenant = useAppStore((s) => s.tenants.find((tenant) => tenant.id === s.currentTenantId));
   const tenants = useAppStore((s) => s.tenants);
@@ -29,10 +30,17 @@ export function Sidebar() {
   const currentUserId = useAppStore((s) => s.currentUserId);
   const currentTenantId = useAppStore((s) => s.currentTenantId);
   const switchTenant = useAppStore((s) => s.switchTenant);
+  const logoutLocal = useAppStore((s) => s.logoutLocal);
   const currentRole =
     memberships.find((item) => item.userId === currentUserId && item.tenantId === currentTenantId && item.status === "active")?.role ??
     memberships.find((item) => item.userId === currentUserId && item.role === "platform_owner" && item.status === "active")?.role;
   const visibleNavItems = navItems.filter((item) => !item.permission || roleHasPermission(currentRole, item.permission));
+
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => undefined);
+    logoutLocal();
+    router.push("/login");
+  };
 
   return (
     <aside className="hidden lg:flex lg:w-64 lg:flex-col border-r border-slate-200 bg-white">
@@ -110,13 +118,14 @@ export function Sidebar() {
             </p>
           </div>
         </div>
-        <Link
-          href="/login"
+        <button
+          type="button"
+          onClick={logout}
           className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
         >
           <LogIn className="h-3.5 w-3.5" />
-          切换账号
-        </Link>
+          退出登录
+        </button>
       </div>
     </aside>
   );

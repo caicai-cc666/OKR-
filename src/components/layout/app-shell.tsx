@@ -1,14 +1,68 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useAppStore } from "@/lib/store";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const applyServerSession = useAppStore((s) => s.applyServerSession);
+  const [authState, setAuthState] = useState<"checking" | "ready">("checking");
+
+  useEffect(() => {
+    if (pathname.startsWith("/login")) {
+      return;
+    }
+
+    let cancelled = false;
+
+    fetch("/api/auth/me", { credentials: "include" })
+      .then(async (response) => {
+        if (cancelled) return;
+
+        if (response.status === 501) {
+          setAuthState("ready");
+          return;
+        }
+
+        if (response.status === 401) {
+          router.replace("/login");
+          return;
+        }
+
+        if (!response.ok) {
+          router.replace("/login");
+          return;
+        }
+
+        const data = await response.json();
+        if (data.session) {
+          applyServerSession(data.session);
+        }
+        setAuthState("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setAuthState("ready");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyServerSession, pathname, router]);
 
   if (pathname.startsWith("/login")) {
     return <main className="min-h-screen bg-slate-50">{children}</main>;
+  }
+
+  if (authState === "checking") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">
+        正在确认登录状态...
+      </main>
+    );
   }
 
   return (

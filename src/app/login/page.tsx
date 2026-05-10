@@ -1,107 +1,141 @@
 "use client";
 
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Building2, ShieldCheck, UserRound } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { LockKeyhole, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAppStore } from "@/lib/store";
-import { AccountRoleLabel } from "@/types";
+
+interface LoginResponse {
+  session?: Parameters<ReturnType<typeof useAppStore.getState>["applyServerSession"]>[0];
+  error?: string;
+}
 
 export default function LoginPage() {
   const router = useRouter();
-  const users = useAppStore((s) => s.users);
-  const tenants = useAppStore((s) => s.tenants);
-  const memberships = useAppStore((s) => s.memberships);
-  const loginAs = useAppStore((s) => s.loginAs);
+  const applyServerSession = useAppStore((s) => s.applyServerSession);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
 
-  const platformMembership = memberships.find((item) => item.role === "platform_owner" && item.status === "active");
-  const platformUser = users.find((user) => user.id === platformMembership?.userId);
-  const tenantMemberships = memberships.filter((item) => item.role !== "platform_owner" && item.status === "active");
+  useEffect(() => {
+    let cancelled = false;
 
-  const enter = (userId: string, tenantId?: string) => {
-    loginAs(userId, tenantId);
-    toast.success("已切换账号");
-    router.push("/cases");
+    fetch("/api/auth/me", { credentials: "include" })
+      .then(async (response) => {
+        if (cancelled) return;
+        if (response.status === 501) {
+          setDemoMode(true);
+          return;
+        }
+        if (!response.ok) return;
+        const data = (await response.json()) as LoginResponse;
+        if (data.session) {
+          applyServerSession(data.session);
+          router.replace("/cases");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setDemoMode(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyServerSession, router]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password }),
+      });
+      const data = (await response.json()) as LoginResponse;
+
+      if (response.status === 501) {
+        setDemoMode(true);
+        toast.info("当前是本地演示模式，服务器登录尚未启用");
+        return;
+      }
+
+      if (!response.ok || !data.session) {
+        toast.error(data.error ?? "登录失败");
+        return;
+      }
+
+      applyServerSession(data.session);
+      toast.success("登录成功");
+      router.push("/cases");
+    } catch {
+      toast.error("无法连接登录服务");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center space-y-6 px-6 py-10">
-      <div className="space-y-2">
-        <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white">
-          <ShieldCheck className="h-5 w-5" />
-        </div>
-        <h1 className="text-2xl font-bold text-slate-900">选择登录身份</h1>
-        <p className="max-w-2xl text-sm leading-relaxed text-slate-500">
-          当前是本地演示登录，用来验证平台层、企业层和普通用户权限。后续接入真实邮箱登录后，同一个邮箱会进入自己所属企业的数据空间。
-        </p>
-      </div>
-
-      {platformUser && (
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ShieldCheck className="h-4 w-4 text-blue-600" />
-              平台层账号
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="font-medium text-slate-900">{platformUser.name}</p>
-                <Badge variant="secondary" className="border-0 bg-blue-50 text-blue-700">
-                  {AccountRoleLabel.platform_owner}
-                </Badge>
-              </div>
-              <p className="mt-1 text-sm text-slate-500">{platformUser.email}</p>
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
+      <Card className="w-full max-w-md border-slate-200 shadow-sm">
+        <CardHeader className="space-y-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div>
+            <CardTitle className="text-xl text-slate-900">登录 OKR 拆解工具</CardTitle>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              使用企业管理员分配的邮箱和密码登录。不同企业的数据会在服务端隔离。
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={submit}>
+            <div className="space-y-2">
+              <Label htmlFor="email">邮箱</Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="name@company.com"
+                required
+              />
             </div>
-            <div className="flex flex-wrap gap-2">
-              {tenants.map((tenant) => (
-                <Button key={tenant.id} variant="outline" onClick={() => enter(platformUser.id, tenant.id)}>
-                  进入 {tenant.name}
-                </Button>
-              ))}
+            <div className="space-y-2">
+              <Label htmlFor="password">密码</Label>
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="输入密码"
+                required
+              />
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <Button className="w-full gap-2 bg-blue-600 hover:bg-blue-700" type="submit" disabled={isSubmitting}>
+              <LockKeyhole className="h-4 w-4" />
+              {isSubmitting ? "登录中..." : "登录"}
+            </Button>
+          </form>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {tenantMemberships.map((membership) => {
-          const user = users.find((item) => item.id === membership.userId);
-          const tenant = tenants.find((item) => item.id === membership.tenantId);
-          if (!user || !tenant) return null;
-
-          return (
-            <Card key={membership.id} className="border-slate-200 shadow-sm">
-              <CardContent className="space-y-4 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100">
-                      <UserRound className="h-4 w-4 text-slate-500" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-slate-900">{user.name}</p>
-                      <p className="mt-0.5 text-xs text-slate-400">{user.email}</p>
-                    </div>
-                  </div>
-                  <Badge variant="secondary" className="border-0 bg-slate-100 text-slate-600">
-                    {AccountRoleLabel[membership.role]}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <Building2 className="h-4 w-4 text-slate-400" />
-                  {tenant.name}
-                </div>
-                <Button className="w-full bg-blue-600 hover:bg-blue-700" onClick={() => enter(user.id, tenant.id)}>
-                  进入工作台
-                </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-    </div>
+          {demoMode && (
+            <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
+              当前环境没有配置服务端数据库登录，会保留本地演示数据。生产服务器应使用真实账号登录。
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </main>
   );
 }
