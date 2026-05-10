@@ -135,17 +135,6 @@ export async function runAgent(
     return mockResponse(role.model);
   }
 
-  // Live mode — check API key
-  if (!role.model.apiKey) {
-    if (strictLive) {
-      throw new Error(`[${role.roleName}] API Key 未配置，strict live 模式下不允许回退 mock`);
-    }
-    await new Promise((r) => setTimeout(r, 300 + Math.random() * 500));
-    const result = mockResponse(role.model);
-    result.error = `API Key 未配置，已回退 mock`;
-    return result;
-  }
-
   // Live mode with retry
   let lastError: Error | null = null;
   const maxRetries = role.maxRetries || 0;

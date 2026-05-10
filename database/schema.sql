@@ -70,6 +70,19 @@ CREATE TABLE IF NOT EXISTS model_credentials (
   UNIQUE (tenant_id, role_id)
 );
 
+CREATE TABLE IF NOT EXISTS platform_model_credentials (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  provider TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  api_base_url TEXT,
+  connection_type TEXT NOT NULL DEFAULT 'official',
+  encrypted_api_key TEXT NOT NULL,
+  settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

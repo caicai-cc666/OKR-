@@ -1,11 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callModel, sanitize, type AdapterError } from "../adapter";
+import { getCurrentSession } from "@/lib/server/auth";
+import { getPlatformModelConfig } from "@/lib/server/platform-model";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const session = await getCurrentSession();
+    const platformModel = session ? await getPlatformModelConfig() : null;
+    const requestBody = platformModel
+      ? {
+          ...body,
+          provider: platformModel.provider,
+          modelId: platformModel.modelId,
+          apiBaseUrl: platformModel.apiBaseUrl,
+          apiKey: platformModel.apiKey,
+          connectionType: platformModel.connectionType,
+          temperature: body.temperature ?? platformModel.temperature,
+          topP: body.topP ?? platformModel.topP,
+          customHeaders: platformModel.customHeaders ?? body.customHeaders,
+          customParams: platformModel.customParams ?? body.customParams,
+        }
+      : body;
     const start = Date.now();
-    const result = await callModel(body);
+    const result = await callModel(requestBody);
     result.durationMs = Date.now() - start;
     return NextResponse.json(result);
   } catch (thrown: unknown) {
