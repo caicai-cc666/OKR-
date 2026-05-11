@@ -7,6 +7,8 @@ COMPOSE_PROJECT="${OKR_COMPOSE_PROJECT:-okr-harness}"
 DOCKER_MIRROR="${OKR_DOCKER_MIRROR:-m.daocloud.io/docker.io}"
 NPM_REGISTRY="${OKR_NPM_REGISTRY:-https://registry.npmmirror.com}"
 REPO_ZIP_URL="${OKR_REPO_ZIP_URL:-https://codeload.github.com/caicai-cc666/OKR-/zip/refs/heads/master?ts=$(date +%s)}"
+REPO_HEAD_URL="${OKR_REPO_HEAD_URL:-https://codeload.github.com/caicai-cc666/OKR-/zip/refs/heads/master}"
+COMMIT_API_URL="${OKR_COMMIT_API_URL:-https://api.github.com/repos/caicai-cc666/OKR-/commits/master}"
 SUDO="${OKR_SUDO:-sudo}"
 
 CURRENT_DIR="$APP_ROOT/$APP_NAME"
@@ -51,7 +53,32 @@ detect_deploy_ref() {
 
   if [ -d "$NEXT_DIR/.git" ]; then
     git -C "$NEXT_DIR" rev-parse HEAD 2>/dev/null || true
+    return
   fi
+
+  local commit_response
+  if commit_response="$(curl -fsSL --connect-timeout 20 --retry 3 \
+    -H "Accept: application/vnd.github+json" \
+    -H "Cache-Control: no-cache" \
+    "$COMMIT_API_URL" 2>/dev/null)"; then
+    printf '%s\n' "$commit_response" |
+      sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' |
+      head -n 1
+  fi
+}
+
+detect_source_etag() {
+  if [ -n "${OKR_SOURCE_ETAG:-}" ]; then
+    printf '%s' "$OKR_SOURCE_ETAG"
+    return
+  fi
+
+  curl -fsSIL --connect-timeout 20 --retry 3 \
+    -H "Cache-Control: no-cache" \
+    "$REPO_HEAD_URL" 2>/dev/null |
+    tr -d '\r' |
+    awk 'tolower($1) == "etag:" { print $2 }' |
+    tail -n 1 || true
 }
 
 log "Preparing source"
@@ -77,7 +104,7 @@ cp "$CURRENT_DIR/.env.production" "$NEXT_DIR/.env.production"
 cp "$CURRENT_DIR/bootstrap-output.txt" "$NEXT_DIR/bootstrap-output.txt" 2>/dev/null || true
 
 DEPLOY_REF="$(detect_deploy_ref)"
-SOURCE_ETAG="${OKR_SOURCE_ETAG:-}"
+SOURCE_ETAG="$(detect_source_etag)"
 DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 upsert_env_var "$NEXT_DIR/.env.production" "OKR_DEPLOY_REF" "$DEPLOY_REF"
 upsert_env_var "$NEXT_DIR/.env.production" "OKR_SOURCE_ETAG" "$SOURCE_ETAG"
