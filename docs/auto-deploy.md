@@ -47,11 +47,15 @@ sudo systemctl disable --now okr-harness-auto-update.timer
 
 ## 可选方案：GitHub Actions SSH 部署
 
-GitHub Actions 默认只做验证，不再自动 SSH 部署。如果确实要启用 SSH 部署，在 Repository variables 里添加：
+GitHub Actions 默认只做验证，不再自动 SSH 部署。即使 Repository variables 里曾经设置过 `ENABLE_SSH_DEPLOY=true`，普通 push 也不会触发 SSH 部署。
+
+如果确实要临时启用 SSH 部署，需要同时满足两个条件：
 
 ```text
 ENABLE_SSH_DEPLOY = true
 ```
+
+并且在 GitHub Actions 页面手动运行 `Deploy production` 工作流时，勾选 `Run the legacy SSH deploy job`。
 
 推送到 `master` 后，工作流会先运行：
 
