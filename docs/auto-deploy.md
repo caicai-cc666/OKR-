@@ -1,6 +1,59 @@
 # 自动部署说明
 
-本项目使用 GitHub Actions 自动部署生产环境。推送到 `master` 后，工作流会先运行：
+推荐使用“服务器自动拉取更新”。这种方式不需要把服务器 SSH 私钥放到 GitHub，也不会因为 GitHub Secrets 配置错误导致部署失败。
+
+## 推荐方案：服务器自动更新
+
+在阿里云服务器执行一次：
+
+```bash
+cd ~/apps
+rm -rf okr-autoupdate-src okr-autoupdate.zip OKR--master
+curl -L --connect-timeout 20 --retry 5 \
+  -H "Cache-Control: no-cache" \
+  -o okr-autoupdate.zip \
+  "https://codeload.github.com/caicai-cc666/OKR-/zip/refs/heads/master?ts=$(date +%s)"
+unzip -q okr-autoupdate.zip -d okr-autoupdate-src
+cd okr-autoupdate-src/OKR--master
+bash scripts/install-auto-update.sh
+```
+
+安装后，服务器会每 5 分钟检查一次 GitHub master 分支。如果发现新代码，会自动执行 `scripts/deploy-production.sh` 完成部署。
+
+查看状态：
+
+```bash
+sudo systemctl status okr-harness-auto-update.timer --no-pager
+sudo systemctl status okr-harness-auto-update.service --no-pager
+```
+
+查看日志：
+
+```bash
+sudo journalctl -u okr-harness-auto-update.service -n 120 --no-pager
+```
+
+手动立即更新：
+
+```bash
+sudo systemctl start okr-harness-auto-update.service
+```
+
+停止自动更新：
+
+```bash
+sudo systemctl disable --now okr-harness-auto-update.timer
+```
+
+## 可选方案：GitHub Actions SSH 部署
+
+GitHub Actions 默认只做验证，不再自动 SSH 部署。如果确实要启用 SSH 部署，在 Repository variables 里添加：
+
+```text
+ENABLE_SSH_DEPLOY = true
+```
+
+推送到 `master` 后，工作流会先运行：
 
 ```bash
 npm ci
