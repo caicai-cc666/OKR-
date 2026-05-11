@@ -30,6 +30,13 @@ REPO_HEAD_URL="${OKR_REPO_HEAD_URL:-https://codeload.github.com/caicai-cc666/OKR
 STATE_FILE="${OKR_STATE_FILE:-$APP_ROOT/.${APP_NAME}-source-etag}"
 LOCK_FILE="${OKR_LOCK_FILE:-$APP_ROOT/.${APP_NAME}-auto-update.lock}"
 CURRENT_DIR="$APP_ROOT/$APP_NAME"
+WORK_DIR="$(mktemp -d "$APP_ROOT/okr-auto-update-XXXXXX")"
+ZIP_FILE="$WORK_DIR/source.zip"
+
+cleanup() {
+  rm -rf "$WORK_DIR"
+}
+trap cleanup EXIT
 
 mkdir -p "$APP_ROOT"
 
@@ -63,19 +70,35 @@ if [ "$etag" = "$previous" ]; then
   exit 0
 fi
 
-if [ ! -x "$CURRENT_DIR/scripts/deploy-production.sh" ]; then
-  if [ ! -f "$CURRENT_DIR/scripts/deploy-production.sh" ]; then
-    echo "Missing deploy script: $CURRENT_DIR/scripts/deploy-production.sh" >&2
-    exit 1
-  fi
-  chmod +x "$CURRENT_DIR/scripts/deploy-production.sh"
+if [ ! -f "$CURRENT_DIR/.env.production" ]; then
+  echo "Missing production env file: $CURRENT_DIR/.env.production" >&2
+  exit 1
 fi
 
 echo "New source detected. Previous: ${previous:-none}; next: $etag"
-OKR_REPO_ZIP_URL="${REPO_HEAD_URL}?ts=$(date +%s)" \
+curl -L --connect-timeout 20 --retry 5 \
+  -H "Cache-Control: no-cache" \
+  -o "$ZIP_FILE" \
+  "${REPO_HEAD_URL}?ts=$(date +%s)"
+
+mkdir -p "$WORK_DIR/source"
+unzip -q "$ZIP_FILE" -d "$WORK_DIR/source"
+SOURCE_DIR="$(find "$WORK_DIR/source" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+if [ -z "$SOURCE_DIR" ]; then
+  echo "Unable to locate extracted source directory" >&2
+  exit 1
+fi
+
+if [ ! -f "$SOURCE_DIR/scripts/deploy-production.sh" ]; then
+  echo "Missing deploy script in downloaded source: $SOURCE_DIR/scripts/deploy-production.sh" >&2
+  exit 1
+fi
+chmod +x "$SOURCE_DIR/scripts/deploy-production.sh"
+
+OKR_SOURCE_DIR="$SOURCE_DIR" \
 OKR_APP_ROOT="$APP_ROOT" \
 OKR_APP_NAME="$APP_NAME" \
-bash "$CURRENT_DIR/scripts/deploy-production.sh"
+bash "$SOURCE_DIR/scripts/deploy-production.sh"
 
 printf '%s' "$etag" > "$STATE_FILE"
 echo "Auto update complete. Source ETag: $etag"
