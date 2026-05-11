@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
+import { VersionBadge } from "./version-badge";
 
 const allowDemoMode =
   process.env.NODE_ENV !== "production" ||
@@ -64,7 +65,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [applyServerSession, pathname, router]);
 
   if (pathname.startsWith("/login")) {
-    return <main className="min-h-screen bg-slate-50">{children}</main>;
+    return (
+      <main className="min-h-screen bg-slate-50">
+        {children}
+        <VersionBadge />
+      </main>
+    );
   }
 
   if (passwordResetRequired && pathname !== "/account/password") {
@@ -90,6 +96,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <TopBar />
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
+      <VersionBadge />
     </div>
   );
 }

@@ -5,6 +5,7 @@ APP_ROOT="${OKR_APP_ROOT:-/home/admin/apps}"
 APP_NAME="${OKR_APP_NAME:-okr-harness}"
 SERVICE_NAME="${OKR_SERVICE_NAME:-okr-harness-auto-update}"
 REPO_HEAD_URL="${OKR_REPO_HEAD_URL:-https://codeload.github.com/caicai-cc666/OKR-/zip/refs/heads/master}"
+COMMIT_API_URL="${OKR_COMMIT_API_URL:-https://api.github.com/repos/caicai-cc666/OKR-/commits/master}"
 INTERVAL="${OKR_UPDATE_INTERVAL:-5min}"
 
 AUTO_UPDATE_SCRIPT="$APP_ROOT/okr-auto-update.sh"
@@ -27,6 +28,7 @@ set -Eeuo pipefail
 APP_ROOT="${OKR_APP_ROOT:-/home/admin/apps}"
 APP_NAME="${OKR_APP_NAME:-okr-harness}"
 REPO_HEAD_URL="${OKR_REPO_HEAD_URL:-https://codeload.github.com/caicai-cc666/OKR-/zip/refs/heads/master}"
+COMMIT_API_URL="${OKR_COMMIT_API_URL:-https://api.github.com/repos/caicai-cc666/OKR-/commits/master}"
 STATE_FILE="${OKR_STATE_FILE:-$APP_ROOT/.${APP_NAME}-source-etag}"
 LOCK_FILE="${OKR_LOCK_FILE:-$APP_ROOT/.${APP_NAME}-auto-update.lock}"
 CURRENT_DIR="$APP_ROOT/$APP_NAME"
@@ -75,6 +77,18 @@ if [ ! -f "$CURRENT_DIR/.env.production" ]; then
   exit 1
 fi
 
+deploy_ref=""
+if commit_response="$(curl -fsSL --connect-timeout 20 --retry 3 \
+  -H "Accept: application/vnd.github+json" \
+  -H "Cache-Control: no-cache" \
+  "$COMMIT_API_URL" 2>/dev/null)"; then
+  deploy_ref="$(
+    printf '%s\n' "$commit_response" |
+      sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' |
+      head -n 1
+  )"
+fi
+
 echo "New source detected. Previous: ${previous:-none}; next: $etag"
 curl -L --connect-timeout 20 --retry 5 \
   -H "Cache-Control: no-cache" \
@@ -98,6 +112,8 @@ chmod +x "$SOURCE_DIR/scripts/deploy-production.sh"
 OKR_SOURCE_DIR="$SOURCE_DIR" \
 OKR_APP_ROOT="$APP_ROOT" \
 OKR_APP_NAME="$APP_NAME" \
+OKR_DEPLOY_REF="$deploy_ref" \
+OKR_SOURCE_ETAG="$etag" \
 bash "$SOURCE_DIR/scripts/deploy-production.sh"
 
 printf '%s' "$etag" > "$STATE_FILE"
@@ -119,6 +135,7 @@ Environment=HOME=/home/admin
 Environment=OKR_APP_ROOT=$APP_ROOT
 Environment=OKR_APP_NAME=$APP_NAME
 Environment=OKR_REPO_HEAD_URL=$REPO_HEAD_URL
+Environment=OKR_COMMIT_API_URL=$COMMIT_API_URL
 Environment=OKR_STATE_FILE=$STATE_FILE
 Environment=OKR_LOCK_FILE=$LOCK_FILE
 Environment=OKR_SUDO=

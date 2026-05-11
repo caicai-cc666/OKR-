@@ -30,6 +30,30 @@ require_file() {
   fi
 }
 
+upsert_env_var() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+
+  value="$(printf '%s' "$value" | tr -d '\r\n')"
+  if grep -q "^${key}=" "$file"; then
+    sed -i "s#^${key}=.*#${key}=${value}#" "$file"
+  else
+    printf '\n%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
+detect_deploy_ref() {
+  if [ -n "${OKR_DEPLOY_REF:-}" ]; then
+    printf '%s' "$OKR_DEPLOY_REF"
+    return
+  fi
+
+  if [ -d "$NEXT_DIR/.git" ]; then
+    git -C "$NEXT_DIR" rev-parse HEAD 2>/dev/null || true
+  fi
+}
+
 log "Preparing source"
 if [ -n "${OKR_SOURCE_DIR:-}" ]; then
   cp -a "$OKR_SOURCE_DIR" "$NEXT_DIR"
@@ -51,6 +75,13 @@ fi
 require_file "$CURRENT_DIR/.env.production"
 cp "$CURRENT_DIR/.env.production" "$NEXT_DIR/.env.production"
 cp "$CURRENT_DIR/bootstrap-output.txt" "$NEXT_DIR/bootstrap-output.txt" 2>/dev/null || true
+
+DEPLOY_REF="$(detect_deploy_ref)"
+SOURCE_ETAG="${OKR_SOURCE_ETAG:-}"
+DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+upsert_env_var "$NEXT_DIR/.env.production" "OKR_DEPLOY_REF" "$DEPLOY_REF"
+upsert_env_var "$NEXT_DIR/.env.production" "OKR_SOURCE_ETAG" "$SOURCE_ETAG"
+upsert_env_var "$NEXT_DIR/.env.production" "OKR_DEPLOYED_AT" "$DEPLOYED_AT"
 
 cd "$NEXT_DIR"
 
