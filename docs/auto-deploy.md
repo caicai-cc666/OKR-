@@ -13,7 +13,7 @@ npm run build
 
 ## GitHub Secrets
 
-在 GitHub 仓库的 `Settings -> Secrets and variables -> Actions -> Repository secrets` 添加：
+推荐在 GitHub 仓库的 `Settings -> Secrets and variables -> Actions -> Repository secrets` 添加：
 
 | Secret | 示例 |
 | --- | --- |
@@ -21,6 +21,9 @@ npm run build
 | `ALIYUN_USER` | `admin` |
 | `ALIYUN_PORT` | `22` |
 | `ALIYUN_SSH_KEY` | 部署专用 SSH 私钥 |
+
+如果你把这些值放在 `Settings -> Environments -> production -> Environment secrets`，工作流也可以读取，因为部署 job 已绑定 `production` environment。
+`ALIYUN_HOST`、`ALIYUN_USER`、`ALIYUN_PORT` 也可以放在 Repository variables；`ALIYUN_SSH_KEY` 必须放在 Secrets。
 
 ## 服务器初始化
 

@@ -40,12 +40,13 @@ jobs:
     name: Deploy to Aliyun
     runs-on: ubuntu-latest
     needs: verify
+    environment: production
     steps:
       - name: Check deployment secrets
         env:
-          ALIYUN_HOST: ${{ secrets.ALIYUN_HOST }}
-          ALIYUN_USER: ${{ secrets.ALIYUN_USER }}
-          ALIYUN_PORT: ${{ secrets.ALIYUN_PORT }}
+          ALIYUN_HOST: ${{ secrets.ALIYUN_HOST || vars.ALIYUN_HOST }}
+          ALIYUN_USER: ${{ secrets.ALIYUN_USER || vars.ALIYUN_USER }}
+          ALIYUN_PORT: ${{ secrets.ALIYUN_PORT || vars.ALIYUN_PORT }}
           ALIYUN_SSH_KEY: ${{ secrets.ALIYUN_SSH_KEY }}
         run: |
           missing=0
@@ -80,10 +81,10 @@ jobs:
           OKR_REPO_ZIP_URL: https://codeload.github.com/${{ github.repository }}/zip/${{ github.sha }}
           OKR_DEPLOY_REF: ${{ github.sha }}
         with:
-          host: ${{ secrets.ALIYUN_HOST }}
-          username: ${{ secrets.ALIYUN_USER }}
+          host: ${{ secrets.ALIYUN_HOST || vars.ALIYUN_HOST }}
+          username: ${{ secrets.ALIYUN_USER || vars.ALIYUN_USER }}
           key: ${{ secrets.ALIYUN_SSH_KEY }}
-          port: ${{ secrets.ALIYUN_PORT || '22' }}
+          port: ${{ secrets.ALIYUN_PORT || vars.ALIYUN_PORT || '22' }}
           timeout: 60s
           command_timeout: 30m
           envs: OKR_REPO_ZIP_URL,OKR_DEPLOY_REF
