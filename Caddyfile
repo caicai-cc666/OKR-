@@ -1,3 +1,10 @@
+{
+  key_type rsa2048
+  servers {
+    protocols h1 h2
+  }
+}
+
 {$APP_DOMAIN} {
   encode zstd gzip
   reverse_proxy app:3000
